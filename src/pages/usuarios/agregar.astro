@@ -1,0 +1,33 @@
+---
+import '../../styles/tailwind.css';
+---
+
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Agregar Usuario</title>
+  </head>
+  <body class="bg-gradient-to-b from-[#f4f4f2] to-[#eae7dc] min-h-screen font-sans text-gray-800 p-8">
+    <div class="max-w-md mx-auto bg-white p-8 rounded-xl shadow-lg border border-gray-200">
+      <h1 class="text-2xl font-bold mb-6 text-[#1e3a5f] flex items-center gap-2">
+        ➕ Nuevo Usuario
+      </h1>
+
+      <form method="POST" action="/api/agregar-usu" class="space-y-4">
+        <input name="nombre" required placeholder="Nombre" class="w-full border border-gray-300 px-4 py-2 rounded-md shadow-sm focus:ring-2 focus:ring-[#cbb26a] focus:outline-none" />
+        
+        <input name="correo" type="email" required placeholder="Correo" class="w-full border border-gray-300 px-4 py-2 rounded-md shadow-sm focus:ring-2 focus:ring-[#cbb26a] focus:outline-none" />
+        
+        <input name="contrasena" type="password" required placeholder="Contraseña" class="w-full border border-gray-300 px-4 py-2 rounded-md shadow-sm focus:ring-2 focus:ring-[#cbb26a] focus:outline-none" />
+        
+        <input name="rol" required placeholder="Rol" class="w-full border border-gray-300 px-4 py-2 rounded-md shadow-sm focus:ring-2 focus:ring-[#cbb26a] focus:outline-none" />
+        
+        <input name="matricula" required placeholder="Matrícula" class="w-full border border-gray-300 px-4 py-2 rounded-md shadow-sm focus:ring-2 focus:ring-[#cbb26a] focus:outline-none" />
+
+        <button type="submit" class="w-full bg-[#cbb26a] hover:bg-[#bfa557] text-white font-semibold px-4 py-2 rounded-md shadow transition duration-200">
+          Agregar
+        </button>
+      </form>
+    </div>
+  </body>
+</html>

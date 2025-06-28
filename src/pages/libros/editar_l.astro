@@ -1,0 +1,161 @@
+---
+// src/pages/libros/editar_libro.astro
+export const prerender = false;
+
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import db from '../../lib/db.js';
+
+const { id } = Astro.params;
+const libroResult = await db.query('SELECT * FROM libros WHERE id = $1', [id]);
+
+if (!libroResult.rows.length) {
+  return Astro.redirect('/libros', 302);
+}
+
+const libro = libroResult.rows[0];
+const catResult = await db.query('SELECT * FROM categorias ORDER BY nombre ASC');
+const categorias = catResult.rows;
+---
+
+<AdminLayout title={`Editar ${libro.titulo}`}>
+  <main class="min-h-screen bg-gray-50 relative overflow-x-hidden font-['Inter']">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+      <div class="bg-white rounded-xl shadow-md p-6 sm:p-8 space-y-8 border border-gray-100">
+        <!-- Botón para volver -->
+        <div>
+          <a href="/libros" class="btn-secondary inline-flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+            </svg>
+            Volver al catálogo
+          </a>
+        </div>
+
+        <!-- Título de sección -->
+        <div class="text-center">
+          <h2 class="text-3xl sm:text-4xl font-bold text-gray-800 mb-3">Editar Libro</h2>
+          <div class="w-24 h-1 bg-indigo-600 mx-auto rounded-full mb-6"></div>
+        </div>
+
+        <!-- Formulario de edición -->
+        <form method="POST" action={`/api/libros/actualizar/${libro.id}`} class="max-w-3xl mx-auto">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="md:col-span-2">
+              <label class="block text-sm font-semibold text-gray-700 mb-2">Título del Libro</label>
+              <input 
+                name="titulo" 
+                required 
+                value={libro.titulo}
+                placeholder="Ingresa el título completo"
+                class="input-field" 
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-2">Autor</label>
+              <input 
+                name="autor" 
+                required 
+                value={libro.autor}
+                placeholder="Nombre del autor"
+                class="input-field" 
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-2">Año de Publicación</label>
+              <input 
+                name="anio" 
+                type="number" 
+                required 
+                value={libro.anio}
+                placeholder="Año"
+                class="input-field" 
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-2">ISBN</label>
+              <input 
+                name="isbn" 
+                required 
+                value={libro.isbn}
+                placeholder="Número ISBN"
+                class="input-field" 
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-2">Categoría</label>
+              <select name="categoria_id" required class="select-field">
+                <option value="" disabled>Selecciona una categoría</option>
+                {categorias.map((cat) => (
+                  <option value={cat.id} selected={cat.id === libro.categoria_id}>
+                    {cat.nombre}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-2">Editorial</label>
+              <input 
+                name="editorial" 
+                value={libro.editorial || ''}
+                placeholder="Editorial"
+                class="input-field" 
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-2">Disponibilidad</label>
+              <select name="disponible" required class="select-field">
+                <option value="t" selected={libro.disponible === 't'}>Disponible</option>
+                <option value="f" selected={libro.disponible === 'f'}>No disponible</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="pt-8 flex justify-center gap-4">
+            <button type="submit" class="btn-primary group transition-transform duration-300 hover:-translate-y-1">
+              <span class="relative z-10 flex items-center justify-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                </svg>
+                <span>Guardar Cambios</span>
+              </span>
+            </button>
+
+            <a href="/libros" class="btn-secondary">
+              Cancelar
+            </a>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <style>
+      .btn-primary {
+        @apply inline-flex items-center gap-2 text-white px-6 py-3 rounded-lg font-medium transition-all duration-300;
+        background-color: #4f46e5;
+      }
+      
+      .btn-primary:hover {
+        background-color: #4338ca;
+        box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+      }
+      
+      .btn-secondary {
+        @apply inline-flex items-center gap-2 text-gray-700 px-6 py-3 rounded-lg font-medium transition-all duration-300 border border-gray-300 hover:bg-gray-50;
+      }
+      
+      .input-field {
+        @apply w-full px-4 py-2.5 rounded-lg focus:outline-none transition-all duration-300 bg-white border border-gray-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100;
+      }
+      
+      .select-field {
+        @apply w-full px-4 py-2.5 rounded-lg focus:outline-none transition-all duration-300 bg-white border border-gray-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100;
+      }
+    </style>
+  </main>
+</AdminLayout>

@@ -1,0 +1,16 @@
+---
+export const prerender = false;
+import db from "../../lib/db.js";
+
+const formData = await Astro.request.formData();
+const id_multa = formData.get("id_multa");
+
+await db.query(`
+  UPDATE multas
+  SET estado = 'pagado',
+      fecha_pago = NOW()
+  WHERE id = $1
+`, [id_multa]);
+
+return Astro.redirect('/multas');
+---

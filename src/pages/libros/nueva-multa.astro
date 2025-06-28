@@ -1,0 +1,56 @@
+---
+// Para traer libros y usuarios y seleccionar
+import db from "../../lib/db.js";
+import AdminLayout from "../../layouts/AdminLayout.astro";
+
+const librosRes = await db.query(`SELECT id, titulo FROM libros ORDER BY titulo`);
+const usuariosRes = await db.query(`SELECT id, nombre FROM usuarios ORDER BY nombre`);
+
+const libros = librosRes.rows;
+const usuarios = usuariosRes.rows;
+---
+
+<AdminLayout title="Registrar Nueva Multa">
+  <div class="container mx-auto px-4 py-8">
+    <h1 class="text-3xl font-bold mb-6">Registrar Nueva Multa</h1>
+
+    <form action="/api/multa" method="POST" class="max-w-md space-y-4">
+      <div>
+        <label for="usuario" class="block font-medium mb-1">Usuario</label>
+        <select name="usuario_id" id="usuario" required class="w-full border rounded px-3 py-2">
+          <option value="" disabled selected>Selecciona un usuario</option>
+          {usuarios.map(u => (
+            <option value={u.id}>{u.nombre}</option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <label for="libro" class="block font-medium mb-1">Libro</label>
+        <select name="libro_id" id="libro" required class="w-full border rounded px-3 py-2">
+          <option value="" disabled selected>Selecciona un libro</option>
+          {libros.map(l => (
+            <option value={l.id}>{l.titulo}</option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <label for="monto" class="block font-medium mb-1">Monto (€)</label>
+        <input type="number" name="monto" id="monto" min="0" step="0.01" required class="w-full border rounded px-3 py-2" />
+      </div>
+
+      <div>
+        <label for="dias_retraso" class="block font-medium mb-1">Días de Retraso</label>
+        <input type="number" name="dias_retraso" id="dias_retraso" min="0" required class="w-full border rounded px-3 py-2" />
+      </div>
+
+      <div>
+        <label for="observaciones" class="block font-medium mb-1">Observaciones (opcional)</label>
+        <textarea name="observaciones" id="observaciones" rows="3" class="w-full border rounded px-3 py-2"></textarea>
+      </div>
+
+      <button type="submit" class="btn-primary">Registrar Multa</button>
+    </form>
+  </div>
+</AdminLayout>

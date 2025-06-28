@@ -1,0 +1,160 @@
+---
+// src/pages/pase-lista.astro
+export const prerender = false;
+import db from '../lib/db';
+
+// 1. Obtener todos los usuarios
+const { rows: usuarios } = await db.query(`
+  SELECT id, nombre, matricula 
+  FROM usuarios
+  ORDER BY nombre
+`);
+
+// 2. Registrar asistencia
+let mensaje = '';
+if (Astro.request.method === 'POST') {
+  const formData = await Astro.request.formData();
+  const usuarioId = formData.get('usuario_id');
+  const accion = formData.get('accion'); // 'registrar' o 'quitar'
+
+  try {
+    if (accion === 'registrar') {
+      await db.query(
+        `INSERT INTO visitas (usuario_id) VALUES ($1)`,
+        [usuarioId]
+      );
+      mensaje = 'Asistencia registrada correctamente';
+    } else {
+      await db.query(
+        `DELETE FROM visitas 
+         WHERE usuario_id = $1 
+         AND DATE(fecha_hora) = CURRENT_DATE
+         LIMIT 1`,
+        [usuarioId]
+      );
+      mensaje = 'Asistencia eliminada';
+    }
+  } catch (error) {
+    mensaje = 'Error: ' + error.message;
+  }
+}
+
+// 3. Obtener asistencias de hoy
+const { rows: asistenciasHoy } = await db.query(`
+  SELECT usuario_id 
+  FROM visitas 
+  WHERE DATE(fecha_hora) = CURRENT_DATE
+`);
+const presentesHoy = new Set(asistenciasHoy.map(a => a.usuario_id));
+
+// 4. Estadísticas básicas
+const { rows: [{total}] } = await db.query(`
+  SELECT COUNT(*) as total 
+  FROM visitas 
+  WHERE DATE(fecha_hora) = CURRENT_DATE
+`);
+---
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pase de Lista - Biblioteca</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .btn-asistencia {
+      transition: all 0.3s ease;
+      min-width: 100px;
+    }
+    .presente {
+      background-color: #10B981;
+      color: white;
+    }
+    .ausente {
+      background-color: #3B82F6;
+      color: white;
+    }
+    .notificacion {
+      animation: fadeIn 0.3s;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body class="bg-gray-50">
+  <div class="container mx-auto p-4 max-w-4xl">
+    <!-- Encabezado -->
+    <header class="text-center mb-8">
+      <h1 class="text-2xl font-bold text-gray-800">Control de Asistencia</h1>
+      <p class="text-gray-600">Biblioteca - {new Date().toLocaleDateString('es-MX')}</p>
+    </header>
+
+    <!-- Resumen estadístico -->
+    <div class="bg-white p-4 rounded-lg shadow mb-6 grid grid-cols-3 gap-4">
+      <div class="text-center">
+        <p class="text-sm text-gray-500">Total</p>
+        <p class="text-2xl font-bold">{total || 0}</p>
+      </div>
+      <div class="text-center">
+        <p class="text-sm text-gray-500">Presentes</p>
+        <p class="text-2xl font-bold text-green-600">{presentesHoy.size}</p>
+      </div>
+      <div class="text-center">
+        <p class="text-sm text-gray-500">Ausentes</p>
+        <p class="text-2xl font-bold text-red-600">{usuarios.length - presentesHoy.size}</p>
+      </div>
+    </div>
+
+    <!-- Lista de usuarios -->
+    <div class="bg-white rounded-lg shadow overflow-hidden">
+      <table class="min-w-full">
+        <thead class="bg-gray-100">
+          <tr>
+            <th class="px-4 py-2 text-left">Nombre</th>
+            <th class="px-4 py-2 text-left">Matrícula</th>
+            <th class="px-4 py-2 text-left">Asistencia</th>
+          </tr>
+        </thead>
+        <tbody>
+          {usuarios.map((usuario) => (
+            <tr key={usuario.id} class="border-t border-gray-200 hover:bg-gray-50">
+              <td class="px-4 py-3">{usuario.nombre}</td>
+              <td class="px-4 py-3">{usuario.matricula}</td>
+              <td class="px-4 py-3">
+                <form method="POST">
+                  <input type="hidden" name="usuario_id" value={usuario.id} />
+                  <button
+                    name="accion"
+                    value={presentesHoy.has(usuario.id) ? 'quitar' : 'registrar'}
+                    class={`btn-asistencia px-4 py-2 rounded-md text-sm ${presentesHoy.has(usuario.id) ? 'presente' : 'ausente'}`}
+                  >
+                    {presentesHoy.has(usuario.id) ? 'Presente' : 'Registrar'}
+                  </button>
+                </form>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Notificación -->
+    {mensaje && (
+      <div class="notificacion fixed bottom-4 right-4 bg-blue-500 text-white px-4 py-2 rounded-md shadow-lg">
+        {mensaje}
+      </div>
+    )}
+  </div>
+
+  <script is:inline>
+    // Ocultar notificación después de 3 segundos
+    setTimeout(() => {
+      const notificacion = document.querySelector('.notificacion');
+      if (notificacion) notificacion.remove();
+    }, 3000);
+  </script>
+</body>
+</html>

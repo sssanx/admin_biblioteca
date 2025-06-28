@@ -1,0 +1,26 @@
+---
+import '../styles/global.css';
+const { title = "Panel de Biblioteca" } = Astro.props;
+---
+
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{title}</title>
+    <link rel="stylesheet" href="/src/styles/global.css" />
+  </head>
+  <body>
+    <header class="bg-blue-800 text-white p-4 shadow-md">
+      <h1 class="text-xl font-bold">Sistema de Biblioteca</h1>
+    </header>
+    
+    <main class="p-6">
+      <slot />
+    </main>
+
+    <footer class="bg-gray-800 text-white text-center py-2 mt-10">
+      <p class="text-sm">&copy; 2025 Biblioteca Escolar</p>
+    </footer>
+  </body>
+</html>

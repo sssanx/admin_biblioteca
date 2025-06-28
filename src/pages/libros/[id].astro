@@ -1,0 +1,223 @@
+---
+export const prerender = false;
+import db from "../../lib/db";
+
+const { params } = Astro;
+const idParsed = parseInt(params.id);
+
+let libro = null;
+let error = null;
+
+if (!isNaN(idParsed)) {
+  const result = await db.query(`
+    SELECT 
+      id,
+      titulo, 
+      autor, 
+      editorial,
+      isbn,
+      portada
+    FROM libros 
+    WHERE id = $1
+  `, [idParsed]);
+  
+  libro = result.rows[0];
+  if (!libro) error = "Libro no encontrado.";
+} else {
+  error = "ID de libro inválido.";
+}
+
+// Función para generar ID alternativo basado en el ID del libro
+const generarIdAlternativo = (id) => {
+  const prefijo = "LIB-";
+  const numero = id.toString().padStart(6, '0');
+  return prefijo + numero;
+};
+
+// Preparar datos
+const datosLibro = {
+  titulo: libro?.titulo || 'Libro sin título',
+  autor: libro?.autor || 'Autor no especificado',
+  editorial: libro?.editorial || 'Editorial no especificada',
+  isbn: libro?.isbn ? libro.isbn.replace(/[^\dXx]/g, '').toUpperCase() : null,
+  idAlternativo: libro?.id ? generarIdAlternativo(libro.id) : 'ID-000000',
+  portada: libro?.portada || null
+};
+---
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Identificación de Libro</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #f5f5f5;
+    }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    .book-info {
+      margin-bottom: 20px;
+    }
+    .book-info p {
+      margin: 8px 0;
+    }
+    .btn {
+      background: #4361ee;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    .btn:hover {
+      background: #3a56d4;
+    }
+    .book-cover {
+      max-width: 150px;
+      max-height: 200px;
+      margin: 10px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    {error ? (
+      <div style="text-align: center; padding: 4rem; color: crimson;">
+        <h1>🚫 Error</h1>
+        <p>{error}</p>
+        <a href="/libros" class="btn">← Volver</a>
+      </div>
+    ) : (
+      <>
+        <h1>Identificación del Libro</h1>
+        
+        {datosLibro.portada && (
+          <img src={datosLibro.portada} alt="Portada" class="book-cover">
+        )}
+        
+        <div class="book-info">
+          <p><strong>Título:</strong> {datosLibro.titulo}</p>
+          <p><strong>Autor:</strong> {datosLibro.autor}</p>
+          <p><strong>Editorial:</strong> {datosLibro.editorial}</p>
+          <p><strong>{datosLibro.isbn ? 'ISBN:' : 'ID:'}</strong> {datosLibro.isbn || datosLibro.idAlternativo}</p>
+        </div>
+        
+        <button id="generateBtn" class="btn">Generar Identificación PDF</button>
+      </>
+    )}
+  </div>
+
+  <script is:inline>
+    document.addEventListener('DOMContentLoaded', async () => {
+      // Función para generar código de barras (funciona con ISBN o ID alternativo)
+      const generarCodigoBarras = (texto) => {
+        const canvas = document.createElement('canvas');
+        JsBarcode(canvas, texto, {
+          format: texto.length === 13 ? "EAN13" : "CODE128",
+          width: 2,
+          height: 60,
+          displayValue: true,
+          fontSize: 12
+        });
+        return canvas;
+      };
+
+      // Función principal para generar PDF
+      window.generatePDF = async function() {
+        try {
+          // Obtener datos del DOM
+          const infoElements = document.querySelectorAll('.book-info p');
+          const libro = {
+            titulo: infoElements[0].textContent.replace('Título: ', ''),
+            autor: infoElements[1].textContent.replace('Autor: ', ''),
+            editorial: infoElements[2].textContent.replace('Editorial: ', ''),
+            identificador: infoElements[3].textContent.split(': ')[1]
+          };
+
+          // Cargar librerías
+          await Promise.all([
+            loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'),
+            loadScript('https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js'),
+            loadScript('https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js')
+          ]);
+
+          const { jsPDF } = window.jspdf;
+          const doc = new jsPDF();
+          const pageWidth = doc.internal.pageSize.width;
+          let y = 20;
+
+          // 1. Encabezado
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(18);
+          doc.text("IDENTIFICACIÓN DE LIBRO", pageWidth / 2, y, { align: 'center' });
+          y += 10;
+
+          // 2. Título
+          doc.setFontSize(14);
+          doc.text(libro.titulo, pageWidth / 2, y, { align: 'center' });
+          y += 10;
+
+          // 3. Autor
+          doc.setFontSize(12);
+          doc.text(`Autor: ${libro.autor}`, pageWidth / 2, y, { align: 'center' });
+          y += 8;
+
+          // 4. Editorial
+          doc.text(`Editorial: ${libro.editorial}`, pageWidth / 2, y, { align: 'center' });
+          y += 8;
+
+          // 5. Identificador (ISBN o ID alternativo)
+          doc.setFont('helvetica', 'bold');
+          doc.text(`ID: ${libro.identificador}`, pageWidth / 2, y, { align: 'center' });
+          y += 10;
+
+          // 6. Código de barras
+          const canvasBarras = generarCodigoBarras(libro.identificador);
+          doc.addImage(canvasBarras, 'PNG', (pageWidth - 100) / 2, y, 100, 50);
+          y += 60;
+
+          // 7. Código QR
+          const qrCanvas = document.createElement('canvas');
+          await QRCode.toCanvas(qrCanvas, libro.identificador, { width: 80, margin: 1 });
+          doc.addImage(qrCanvas, 'PNG', (pageWidth - 60) / 2, y, 60, 60);
+
+          // Guardar PDF
+          doc.save(`ID_${libro.titulo.substring(0, 15).replace(/[^\w]/g, '_')}.pdf`);
+        } catch (error) {
+          console.error("Error al generar PDF:", error);
+          alert("Error al generar el PDF: " + error.message);
+        }
+      };
+
+      // Función para cargar scripts
+      function loadScript(src) {
+        return new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = src;
+          script.onload = resolve;
+          script.onerror = () => reject(new Error(`Error al cargar script: ${src}`));
+          document.head.appendChild(script);
+        });
+      }
+
+      // Asignar evento al botón
+      document.getElementById('generateBtn')?.addEventListener('click', window.generatePDF);
+    });
+  </script>
+</body>
+</html>

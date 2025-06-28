@@ -1,0 +1,276 @@
+---
+// src/pages/login.astro
+export const prerender = false;
+---
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Acceso Universitario | BiblioFun</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap');
+    
+    :root {
+      --primary: #1d4ed8;
+      --primary-light: #3b82f6;
+      --university-dark: #0f172a;
+      --university-light: #64748b;
+      --accent: #e11d48;
+    }
+    
+    body {
+      font-family: 'Manrope', sans-serif;
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+    }
+    
+    .hero-section {
+      background: 
+        linear-gradient(rgba(15, 23, 42, 0.7), rgba(15, 23, 42, 0.7)),
+        url('/assets/university-bg.jpg') center/cover no-repeat;
+      color: white;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 3rem;
+      position: relative;
+    }
+    
+    .university-logo {
+      position: absolute;
+      top: 2rem;
+      left: 2rem;
+      max-width: 180px;
+    }
+    
+    .hero-content {
+      max-width: 500px;
+      margin: 0 auto;
+    }
+    
+    .hero-title {
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+      line-height: 1.2;
+    }
+    
+    .hero-subtitle {
+      font-size: 1.1rem;
+      opacity: 0.9;
+      font-weight: 400;
+      margin-bottom: 2rem;
+    }
+    
+    .login-section {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+      background: #f8fafc;
+    }
+    
+    .login-card {
+      width: 100%;
+      max-width: 420px;
+      background: white;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
+      border: 1px solid #e2e8f0;
+    }
+    
+    .card-header {
+      padding: 2rem;
+      text-align: center;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    
+    .system-logo {
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: var(--university-dark);
+      margin-bottom: 0.5rem;
+    }
+    
+    .system-logo span {
+      color: var(--accent);
+    }
+    
+    .system-description {
+      font-size: 0.9rem;
+      color: var(--university-light);
+    }
+    
+    .card-body {
+      padding: 2rem;
+    }
+    
+    .form-group {
+      margin-bottom: 1.5rem;
+    }
+    
+    .form-label {
+      display: block;
+      margin-bottom: 0.5rem;
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--university-dark);
+    }
+    
+    .form-control {
+      width: 100%;
+      padding: 0.875rem 1rem;
+      font-size: 0.9375rem;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      background-color: #f8fafc;
+      transition: all 0.2s ease;
+    }
+    
+    .form-control:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.1);
+      background-color: white;
+    }
+    
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      padding: 1rem;
+      font-size: 0.9375rem;
+      font-weight: 600;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      border: none;
+    }
+    
+    .btn-primary {
+      background: var(--primary);
+      color: white;
+    }
+    
+    .btn-primary:hover {
+      background: var(--primary-light);
+      transform: translateY(-1px);
+    }
+    
+    .form-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 1rem;
+      font-size: 0.875rem;
+    }
+    
+    .remember-me {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: var(--university-light);
+    }
+    
+    .forgot-password {
+      color: var(--primary);
+      text-decoration: none;
+      font-weight: 500;
+    }
+    
+    .forgot-password:hover {
+      text-decoration: underline;
+    }
+    
+    .card-footer {
+      padding: 1.5rem 2rem;
+      text-align: center;
+      font-size: 0.875rem;
+      color: var(--university-light);
+      border-top: 1px solid #f1f5f9;
+    }
+    
+    @media (max-width: 768px) {
+      body {
+        grid-template-columns: 1fr;
+      }
+      
+      .hero-section {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Sección institucional con imagen de fondo -->
+  <section class="hero-section">
+    <!-- Reemplaza con el logo de tu universidad -->
+    <img src="/public/tlaxco.webp" alt="Logo Universidad" class="university-logo">
+    
+    <div class="hero-content">
+      <h1 class="hero-title">Bienvenido al Sistema Bibliotecario</h1>
+      <p class="hero-subtitle">Accede a todos los recursos académicos y servicios de la biblioteca universitaria</p>
+    </div>
+  </section>
+  
+  <!-- Sección de login -->
+  <section class="login-section">
+    <div class="login-card">
+      <div class="card-header">
+        <div class="system-logo">Biblio<span>Tec</span></div>
+        <div class="system-description">Sistema de Gestión Bibliotecaria</div>
+      </div>
+      
+      <div class="card-body">
+        <form method="POST" action="/api/login">
+          <div class="form-group">
+            <label for="email" class="form-label">Correo Institucional</label>
+            <input 
+              type="email" 
+              id="email" 
+              name="email" 
+              class="form-control" 
+              placeholder="usuario@universidad.edu" 
+              required
+            >
+          </div>
+          
+          <div class="form-group">
+            <label for="password" class="form-label">Contraseña</label>
+            <input 
+              type="password" 
+              id="password" 
+              name="password" 
+              class="form-control" 
+              placeholder="••••••••" 
+              required
+            >
+          </div>
+          
+          <div class="form-footer">
+            <label class="remember-me">
+              <input type="checkbox"> Mantener sesión
+            </label>
+            <a href="#" class="forgot-password">¿Olvidó su contraseña?</a>
+          </div>
+          
+          <button type="submit" class="btn btn-primary" style="margin-top: 1.5rem;">
+            Ingresar al Sistema
+          </button>
+        </form>
+      </div>
+      
+      <div class="card-footer">
+        ¿Problemas para acceder? <a href="#">Contacte al soporte técnico</a>
+      </div>
+    </div>
+  </section>
+</body>
+</html>

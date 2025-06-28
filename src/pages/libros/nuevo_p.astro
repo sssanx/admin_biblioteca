@@ -1,0 +1,186 @@
+---
+export const prerender = false;
+
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import db from '../../lib/db.js';
+
+const librosResult = await db.query("SELECT id, titulo, categoria FROM libros");
+const userResult = await db.query("SELECT id, nombre FROM usuarios");
+
+const libros = librosResult.rows;
+const usuarios = userResult.rows;
+---
+
+<AdminLayout title="Registrar Préstamo">
+  <main class="min-h-screen bg-gray-50 font-['Inter']">
+    <div class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+      <div class="bg-white rounded-xl shadow-md p-6 sm:p-8 space-y-6 border border-gray-100">
+
+        <h1 class="text-3xl font-bold text-center text-gray-800">Registrar Nuevo Préstamo</h1>
+        <div class="w-20 h-1 bg-indigo-600 mx-auto rounded-full mb-6"></div>
+
+        <form method="POST" action="/api/prestamo" onsubmit="return validarFormulario()" class="space-y-6">
+          <input type="hidden" name="id_libro" id="id_libro" required />
+          <input type="hidden" name="id_usuario" id="id_usuario" required />
+
+          <!-- Selección de libro -->
+          <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-2">📚 Libro</label>
+            <button type="button" class="btn-primary" id="openLibroModalBtn">Seleccionar libro</button>
+            <span id="libroSeleccionado" class="ml-2 font-medium text-gray-700">Ninguno</span>
+          </div>
+
+          <!-- Selección de usuario -->
+          <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-2">👤 Usuario</label>
+            <button type="button" class="btn-primary" id="openUsuarioModalBtn">Seleccionar usuario</button>
+            <span id="usuarioSeleccionado" class="ml-2 font-medium text-gray-700">Ninguno</span>
+          </div>
+
+          <!-- Duración -->
+          <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-2">⏳ Duración del préstamo (días)</label>
+            <input type="number" name="duracion" min="1" value="5" required class="input-field" />
+          </div>
+
+          <div id="errorMsg" class="text-red-600 font-semibold"></div>
+
+          <button type="submit" class="btn-primary w-full">
+            📚 Prestar libro
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Modal Libro -->
+    <div id="modalLibro" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <div class="bg-white rounded-xl shadow-lg max-w-lg w-full p-6 relative">
+        <button id="closeLibroModal" class="absolute top-3 right-3 text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+        <h3 class="text-xl font-bold mb-3">Selecciona un libro</h3>
+        <input type="text" id="filtroLibro" placeholder="Buscar por título o categoría..." class="input-field mb-3" />
+        <ul id="listaLibros" class="divide-y divide-gray-200 max-h-64 overflow-y-auto">
+          {libros.length === 0 ? (
+            <li class="text-center text-gray-500 italic py-2">No hay libros disponibles.</li>
+          ) : (
+            libros.map(libro => (
+              <li class="p-2 hover:bg-gray-50 cursor-pointer" onclick={`seleccionarLibro(${libro.id}, '${libro.titulo.replace(/'/g, "\\'")}')`}>
+                {libro.titulo} ({libro.categoria || "Sin categoría"})
+              </li>
+            ))
+          )}
+        </ul>
+      </div>
+    </div>
+
+    <!-- Modal Usuario -->
+    <div id="modalUsuario" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <div class="bg-white rounded-xl shadow-lg max-w-lg w-full p-6 relative">
+        <button id="closeUsuarioModal" class="absolute top-3 right-3 text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+        <h3 class="text-xl font-bold mb-3">Selecciona un usuario</h3>
+        <input type="text" id="filtroUsuario" placeholder="Buscar por nombre..." class="input-field mb-3" />
+        <ul id="listaUsuarios" class="divide-y divide-gray-200 max-h-64 overflow-y-auto">
+          {usuarios.length === 0 ? (
+            <li class="text-center text-gray-500 italic py-2">No hay usuarios disponibles.</li>
+          ) : (
+            usuarios.map(u => (
+              <li class="p-2 hover:bg-gray-50 cursor-pointer" onclick={`seleccionarUsuario(${u.id}, '${u.nombre.replace(/'/g, "\\'")}')`}>
+                {u.nombre}
+              </li>
+            ))
+          )}
+        </ul>
+      </div>
+    </div>
+
+    <style>
+      .btn-primary {
+        @apply inline-flex items-center justify-center gap-2 bg-indigo-600 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-indigo-700 transition-all duration-300;
+      }
+
+      .input-field {
+        @apply w-full px-4 py-2.5 rounded-lg bg-white border border-gray-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100;
+      }
+    </style>
+
+    <script>
+      const modalLibro = document.getElementById("modalLibro");
+      const openLibroModalBtn = document.getElementById("openLibroModalBtn");
+      const closeLibroModalBtn = document.getElementById("closeLibroModal");
+      const filtroLibroInput = document.getElementById("filtroLibro");
+      const listaLibros = document.getElementById("listaLibros");
+      const libroSeleccionadoSpan = document.getElementById("libroSeleccionado");
+      const idLibroInput = document.getElementById("id_libro");
+
+      const modalUsuario = document.getElementById("modalUsuario");
+      const openUsuarioModalBtn = document.getElementById("openUsuarioModalBtn");
+      const closeUsuarioModalBtn = document.getElementById("closeUsuarioModal");
+      const filtroUsuarioInput = document.getElementById("filtroUsuario");
+      const listaUsuarios = document.getElementById("listaUsuarios");
+      const usuarioSeleccionadoSpan = document.getElementById("usuarioSeleccionado");
+      const idUsuarioInput = document.getElementById("id_usuario");
+
+      openLibroModalBtn.onclick = () => {
+        modalLibro.classList.remove("hidden");
+        filtroLibroInput.value = "";
+        filtrarLibros("");
+        filtroLibroInput.focus();
+      };
+      closeLibroModalBtn.onclick = () => modalLibro.classList.add("hidden");
+
+      openUsuarioModalBtn.onclick = () => {
+        modalUsuario.classList.remove("hidden");
+        filtroUsuarioInput.value = "";
+        filtrarUsuarios("");
+        filtroUsuarioInput.focus();
+      };
+      closeUsuarioModalBtn.onclick = () => modalUsuario.classList.add("hidden");
+
+      window.onclick = (e) => {
+        if (e.target === modalLibro) modalLibro.classList.add("hidden");
+        if (e.target === modalUsuario) modalUsuario.classList.add("hidden");
+      };
+
+      window.seleccionarLibro = (id, titulo) => {
+        idLibroInput.value = id;
+        libroSeleccionadoSpan.textContent = titulo;
+        modalLibro.classList.add("hidden");
+        document.getElementById("errorMsg").textContent = "";
+      };
+
+      window.seleccionarUsuario = (id, nombre) => {
+        idUsuarioInput.value = id;
+        usuarioSeleccionadoSpan.textContent = nombre;
+        modalUsuario.classList.add("hidden");
+        document.getElementById("errorMsg").textContent = "";
+      };
+
+      filtroLibroInput.addEventListener("input", () => filtrarLibros(filtroLibroInput.value.toLowerCase()));
+      function filtrarLibros(texto) {
+        for (const li of listaLibros.children) {
+          const textoLi = li.textContent.toLowerCase();
+          li.style.display = textoLi.includes(texto) ? "" : "none";
+        }
+      }
+
+      filtroUsuarioInput.addEventListener("input", () => filtrarUsuarios(filtroUsuarioInput.value.toLowerCase()));
+      function filtrarUsuarios(texto) {
+        for (const li of listaUsuarios.children) {
+          const textoLi = li.textContent.toLowerCase();
+          li.style.display = textoLi.includes(texto) ? "" : "none";
+        }
+      }
+
+      function validarFormulario() {
+        const libro = idLibroInput.value.trim();
+        const usuario = idUsuarioInput.value.trim();
+
+        if (!libro || !usuario) {
+          document.getElementById("errorMsg").textContent = "⚠️ Selecciona un libro y un usuario.";
+          return false;
+        }
+
+        return true;
+      }
+    </script>
+  </main>
+</AdminLayout>

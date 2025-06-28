@@ -1,0 +1,163 @@
+---
+// Carga de datos desde la base de datos
+import db from "../../lib/db.js";
+import AdminLayout from '../../layouts/AdminLayout.astro';
+
+const result = await db.query(`
+  SELECT p.id, l.titulo, u.nombre, 
+         p.fecha_prestamo, 
+         p.fecha_devolucion,
+         p.fecha_devolucion_esperada,
+         CASE 
+           WHEN p.fecha_devolucion IS NOT NULL THEN 'devuelto'
+           WHEN p.fecha_devolucion_esperada < NOW() THEN 'vencido'
+           ELSE 'en_préstamo'
+         END as estado
+  FROM prestamos p
+  JOIN libros l ON p.id_libro = l.id
+  JOIN usuarios u ON p.id_usuario = u.id
+  ORDER BY p.fecha_prestamo DESC
+`);
+const prestamos = result.rows;
+---
+
+<AdminLayout title="Gestión de Préstamos">
+  <div class="container mx-auto px-4 py-8">
+    <div class="flex justify-between items-center mb-8">
+      <h1 class="text-3xl font-bold text-gray-800">Gestión de Préstamos</h1>
+      <a href="/libros/nuevo_p" class="btn-primary flex items-center">
+        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+        </svg>
+        Nuevo Préstamo
+      </a>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-md overflow-hidden">
+      {prestamos.length > 0 ? (
+        <div class="overflow-x-auto">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Libro</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Usuario</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha Préstamo</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha Límite</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
+              </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+              {prestamos.map(p => {
+                const fechaLimite = new Date(p.fecha_devolucion_esperada);
+                const estaVencida = p.estado === 'vencido';
+
+                return (
+                  <tr key={p.id} class="hover:bg-gray-50 transition-colors">
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{p.titulo}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{p.nombre}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {new Date(p.fecha_prestamo).toLocaleDateString('es-ES')}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <span class={`${estaVencida ? 'text-red-600' : 'text-gray-600'}`}>
+                        {fechaLimite.toLocaleDateString('es-ES')}
+                        {estaVencida && ' ⚠️'}
+                      </span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                      {p.estado === 'devuelto' ? (
+                        <span class="badge-success">
+                          <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                          </svg>
+                          Devuelto
+                        </span>
+                      ) : p.estado === 'vencido' ? (
+                        <span class="badge-danger">
+                          <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                          </svg>
+                          Vencido
+                        </span>
+                      ) : (
+                        <span class="badge-warning">
+                          <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                          </svg>
+                          En préstamo
+                        </span>
+                      )}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      {!p.fecha_devolucion && (
+                        <form action="/api/devolver" method="POST" class="inline-block">
+                          <input type="hidden" name="id_prestamo" value={p.id} />
+                          <button type="submit" class="btn-primary-sm">
+                            Registrar Devolución
+                          </button>
+                        </form>
+                      )}
+                      {p.estado === 'vencido' && (
+                        <>
+                          <button class="btn-danger-sm ml-2">
+                            Notificar
+                          </button>
+                          <form action="/libros/multas" method="POST" class="inline-block ml-2">
+  <input type="hidden" name="id_prestamo" value={p.id} />
+  <button type="submit" class="btn-danger-sm">Multa</button>
+</form>
+
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div class="text-center py-12">
+          <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
+          </svg>
+          <h3 class="mt-2 text-lg font-medium text-gray-900">No hay préstamos registrados</h3>
+          <p class="mt-1 text-sm text-gray-500">Comienza registrando un nuevo préstamo.</p>
+          <div class="mt-6">
+            <a href="/libros/" class="btn-primary inline-flex items-center">
+              <svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+              </svg>
+              Nuevo Préstamo
+            </a>
+          </div>
+        </div>
+      )}
+    </div>
+  </div>
+  <script>
+</script>
+
+
+  <style is:global>
+    .btn-primary {
+      @apply bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors;
+    }
+    .btn-primary-sm {
+      @apply bg-indigo-600 text-white px-3 py-1 rounded-md text-xs font-medium hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors;
+    }
+    .btn-danger-sm {
+      @apply bg-red-600 text-white px-3 py-1 rounded-md text-xs font-medium hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors;
+    }
+    .badge-success {
+      @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800;
+    }
+    .badge-warning {
+      @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800;
+    }
+    .badge-danger {
+      @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800;
+    }
+  </style>
+</AdminLayout>

@@ -1,0 +1,146 @@
+---
+import db from '../../lib/db.js';
+import AdminLayout from '../../layouts/AdminLayout.astro';
+
+const { filtro } = Astro.url.searchParams;
+let rangoSQL = "";
+
+if (filtro === "semana") {
+  rangoSQL = `AND p.fecha_prestamo >= NOW() - INTERVAL '7 days'`;
+} else if (filtro === "mes") {
+  rangoSQL = `AND p.fecha_prestamo >= NOW() - INTERVAL '1 month'`;
+}
+
+const { rows: historial } = await db.query(`
+  SELECT p.id,
+         l.titulo,
+         u.nombre,
+         ca.nombre AS carrera,
+         c.nombre AS cuatrimestre,
+         p.fecha_prestamo,
+         p.fecha_devolucion,
+         p.fecha_devolucion_esperada,
+         p.devuelto
+  FROM prestamos p
+  JOIN libros l ON l.id = p.libro_id
+  JOIN usuarios u ON u.id = p.usuario_id
+  LEFT JOIN cuatrimestre c ON u.id_cuatrimestre = c.id
+  LEFT JOIN carreras ca ON u.carrera_id = ca.id
+  WHERE 1 = 1
+  ${rangoSQL}
+  ORDER BY p.fecha_prestamo DESC
+`);
+---
+
+<AdminLayout title="Historial de Préstamos">
+  <div class="container mx-auto px-4 py-8">
+    <div class="flex justify-between items-center mb-6 flex-wrap gap-4">
+      <h1 class="text-3xl font-bold">Historial de Préstamos</h1>
+
+      <div class="flex gap-3 flex-wrap">
+        <select id="filtro" class="border rounded-lg px-3 py-2 text-sm shadow-sm">
+          <option value="">Todo</option>
+          <option value="semana" selected={filtro === "semana"}>Última semana</option>
+          <option value="mes" selected={filtro === "mes"}>Último mes</option>
+        </select>
+
+        <button
+          id="vaciarHistorialBtn"
+          class="bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-2 rounded-lg shadow transition"
+        >
+          Vaciar Historial
+        </button>
+
+        <button
+          id="descargarPdfBtn"
+          class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-2 rounded-lg shadow transition"
+        >
+          Descargar PDF
+        </button>
+      </div>
+    </div>
+
+    <!-- Contenedor con scroll lateral y vertical para la tabla -->
+    <div class="overflow-x-auto max-w-full max-h-[600px] overflow-y-auto bg-white rounded-xl shadow-md">
+      {historial.length > 0 ? (
+        <table class="min-w-full divide-y divide-gray-200 bg-white rounded-xl shadow overflow-hidden text-sm">
+          <thead class="bg-gray-50 text-xs uppercase text-gray-600 font-medium tracking-wider">
+            <tr>
+              <th class="px-4 py-3 text-left">Libro</th>
+              <th class="px-4 py-3 text-left">Usuario</th>
+              <th class="px-4 py-3 text-left">Carrera</th>
+              <th class="px-4 py-3 text-left">Cuatrimestre</th>
+              <th class="px-4 py-3 text-left">Fecha Préstamo</th>
+              <th class="px-4 py-3 text-left">Fecha Devolución</th>
+              <th class="px-4 py-3 text-left">Estado</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            {historial.map(p => (
+              <tr key={p.id} class="hover:bg-gray-50 transition">
+                <td class="px-4 py-3 text-gray-900">{p.titulo}</td>
+                <td class="px-4 py-3 text-gray-700">{p.nombre}</td>
+                <td class="px-4 py-3 text-gray-500">{p.carrera ?? '-'}</td>
+                <td class="px-4 py-3 text-gray-500">{p.cuatrimestre ?? '-'}</td>
+                <td class="px-4 py-3 text-gray-500">{new Date(p.fecha_prestamo).toLocaleDateString('es-ES')}</td>
+                <td class="px-4 py-3 text-gray-500">{p.fecha_devolucion ? new Date(p.fecha_devolucion).toLocaleDateString('es-ES') : '—'}</td>
+                <td class="px-4 py-3">
+                  <span class={`text-xs px-2 py-1 rounded-full ${p.devuelto ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                    {p.devuelto ? 'Devuelto' : 'Pendiente'}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <p class="text-center py-12 text-gray-500">No hay préstamos registrados aún.</p>
+      )}
+    </div>
+  </div>
+
+  <script type="module">
+    document.querySelector('#filtro')?.addEventListener('change', e => {
+      const filtro = e.target.value;
+      window.location.search = filtro ? `?filtro=${filtro}` : '';
+    });
+
+    document.querySelector('#descargarPdfBtn')?.addEventListener('click', async () => {
+      try {
+        const filtro = document.querySelector('#filtro')?.value;
+        const res = await fetch('/api/generate-historial-pdf', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filtro })
+        });
+
+        if (!res.ok) throw new Error('Error al generar PDF');
+
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'historial_prestamos.pdf';
+        link.click();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        console.error('Error al descargar PDF:', err);
+        alert('Ocurrió un error al generar el PDF.');
+      }
+    });
+
+    document.querySelector('#vaciarHistorialBtn')?.addEventListener('click', async () => {
+      if (!confirm("¿Estás seguro de vaciar todo el historial de préstamos devueltos?")) return;
+
+      try {
+        const res = await fetch('/api/vaciar-historial', { method: 'POST' });
+        if (!res.ok) throw new Error('Error al vaciar historial');
+        alert('Historial vaciado exitosamente.');
+        window.location.reload();
+      } catch (err) {
+        console.error('Error:', err);
+        alert('Ocurrió un error al vaciar el historial.');
+      }
+    });
+  </script>
+</AdminLayout>

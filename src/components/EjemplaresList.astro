@@ -1,0 +1,402 @@
+---
+const { libroId } = Astro.props;
+
+const API_BASE = import.meta.env.DEV 
+  ? `http://localhost:${import.meta.env.ASTRO_PORT || 4321}`
+  : '';
+
+let ejemplares = [];
+let error = null;
+
+try {
+  const url = `${API_BASE}/api/ejemplares/libro/${libroId}`;
+  console.log("Consultando:", url);
+  
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+  const response = await fetch(url, {
+    signal: controller.signal,
+    headers: {
+      'Accept': 'application/json',
+      'Connection': 'keep-alive'
+    }
+  });
+
+  clearTimeout(timeoutId);
+
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  
+  ejemplares = await response.json();
+  
+} catch (err) {
+  console.error("Error de conexión:", err);
+  error = {
+    message: 'Error temporal del sistema',
+    detail: err.name === 'AbortError' 
+      ? 'Timeout de conexión' 
+      : 'Por favor intente nuevamente'
+  };
+}
+---
+<div class="ejemplares-section">
+  <h3 class="section-title">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M17 17H22V19H17V17M7 7H2V9H7V7M17 5C17 3.9 16.1 3 15 3H9C7.9 3 7 3.9 7 5V19C7 20.1 7.9 21 9 21H15C16.1 21 17 20.1 17 19V5M15 5V19H9V5H15Z"/>
+    </svg>
+    Gestión de Ejemplares
+  </h3>
+
+  {error && (
+    <div class="error-message">
+      Error: {error.message} {error.detail && `(${error.detail})`}
+    </div>
+  )}
+
+  <!-- Formulario de creación -->
+  <form id="form-ejemplar" class="ejemplar-form">
+    <input type="hidden" name="libro_id" value={libroId} />
+    
+    <div class="form-group">
+      <label>Código de Barras</label>
+      <input type="text" name="codigo_barras" required 
+             value={`LIB-${libroId}-${Math.floor(1000 + Math.random() * 9000)}`}>
+    </div>
+    
+    <div class="form-group">
+      <label>Número de Ejemplar</label>
+      <input type="number" name="numero_ejemplar" required min="1" value={ejemplares.length + 1}>
+    </div>
+    
+    <div class="form-group">
+      <label>Número de Adquisición</label>
+      <input type="text" name="numero_adquisicion" 
+             placeholder="Ej: ADQ-2023-001">
+    </div>
+    
+    <div class="form-group">
+      <label>Estado</label>
+      <select name="estado" required>
+        <option value="disponible">Disponible</option>
+        <option value="prestado">Prestado</option>
+        <option value="en_reparacion">En reparación</option>
+        <option value="perdido">Perdido</option>
+      </select>
+    </div>
+    
+    <button type="submit" class="btn-submit">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M17 3H5C3.89 3 3 3.9 3 5V19C3 20.1 3.89 21 5 21H19C20.1 21 21 20.1 21 19V7L17 3M12 19C10.34 19 9 17.66 9 16S10.34 13 12 13 15 14.34 15 16 13.66 19 12 19M15 9H5V5H15V9Z"/>
+      </svg>
+      Registrar Ejemplar
+    </button>
+  </form>
+
+  <!-- Lista de ejemplares -->
+  <div class="ejemplares-list">
+    {ejemplares.length > 0 ? (
+      <table>
+        <thead>
+          <tr>
+            <th>Código</th>
+            <th>Ejemplar</th>
+            <th>Adquisición</th>
+            <th>Estado</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          {ejemplares.map((ejemplar: { id: unknown; codigo_barras: unknown; numero_ejemplar: unknown; numero_adquisicion: any; estado: string; }) => (
+            <tr key={ejemplar.id}>
+              <td>{ejemplar.codigo_barras}</td>
+              <td>{ejemplar.numero_ejemplar}</td>
+              <td>{ejemplar.numero_adquisicion || 'N/A'}</td>
+              <td>
+                <span class={`estado ${ejemplar.estado}`}>
+                  {ejemplar.estado.replace('_', ' ')}
+                </span>
+              </td>
+              <td>
+                <button class="btn-icon delete" data-id={ejemplar.id}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M19 4H15.5L14.5 3H9.5L8.5 4H5V6H19M6 19A2 2 0 0 0 8 21H16A2 2 0 0 0 18 19V7H6V19Z"/>
+                  </svg>
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    ) : (
+      <p class="no-ejemplares">No hay ejemplares registrados</p>
+    )}
+  </div>
+</div>
+
+<style>
+/* Tus estilos actualizados */
+.ejemplares-section {
+  margin-top: 2rem;
+  padding: 1.5rem;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.section-title {
+  color: #2c3e50;
+  font-size: 1.3rem;
+  margin-top: 0;
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.error-message {
+  color: #dc3545;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+  background: #f8d7da;
+  border-radius: 4px;
+  border-left: 4px solid #dc3545;
+}
+
+.ejemplar-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2rem;
+  padding: 1rem;
+  background: #f8f9fa;
+  border-radius: 6px;
+}
+
+.form-group {
+  margin-bottom: 0;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  color: #495057;
+}
+
+.form-group input,
+.form-group select {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  font-size: 1rem;
+}
+
+.btn-submit {
+  background: #005D93;
+  color: white;
+  border: none;
+  padding: 0.75rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  transition: background 0.2s;
+  grid-column: 1 / -1;
+}
+
+.btn-submit:hover {
+  background: #004b7a;
+}
+
+.ejemplares-list {
+  margin-top: 1rem;
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+th, td {
+  padding: 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid #dee2e6;
+}
+
+th {
+  background-color: #005D93;
+  color: white;
+}
+
+.estado {
+  display: inline-block;
+  padding: 0.35rem 0.75rem;
+  border-radius: 50px;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.estado.disponible {
+  background: #d4edda;
+  color: #155724;
+}
+
+.estado.prestado {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.estado.en_reparacion {
+  background: #cce5ff;
+  color: #004085;
+}
+
+.estado.perdido {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.btn-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-icon.delete {
+  background: #f8d7da;
+  color: #dc3545;
+}
+
+.btn-icon.delete:hover {
+  background: #f1b0b7;
+}
+
+.no-ejemplares {
+  text-align: center;
+  padding: 1rem;
+  color: #6c757d;
+  font-style: italic;
+}
+
+@media (max-width: 768px) {
+  .ejemplar-form {
+    grid-template-columns: 1fr;
+  }
+  
+  table {
+    font-size: 0.85rem;
+  }
+  
+  th, td {
+    padding: 0.5rem;
+  }
+}
+</style>
+
+<script is:inline>
+// Manejo del formulario
+document.getElementById('form-ejemplar').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  
+  const form = e.target;
+  const submitBtn = form.querySelector('button[type="submit"]');
+  const originalText = submitBtn.innerHTML;
+  
+  try {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = `
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" class="spin">
+        <path d="M12,4V2A10,10 0 0,0 2,12H4A8,8 0 0,1 12,4Z"/>
+      </svg>
+      Guardando...
+    `;
+    
+    const formData = new FormData(form);
+    const data = {
+      libro_id: formData.get('libro_id'),
+      codigo_barras: formData.get('codigo_barras'),
+      numero_ejemplar: parseInt(formData.get('numero_ejemplar')),
+      estado: formData.get('estado'),
+      numero_adquisicion: formData.get('numero_adquisicion') || null
+    };
+
+    console.log("Enviando datos:", data);
+    
+    const response = await fetch('/api/ejemplares/crear', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data)
+    });
+
+    const result = await response.json();
+    console.log("Respuesta del servidor:", result);
+    
+    if (!response.ok) {
+      throw new Error(result.error || result.message || 'Error al guardar el ejemplar');
+    }
+    
+    alert('Ejemplar registrado correctamente');
+    window.location.reload();
+    
+  } catch (error) {
+    console.error('Error completo:', error);
+    alert(`Error: ${error.message}`);
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.innerHTML = originalText;
+  }
+});
+
+// Manejo de eliminación
+document.querySelectorAll('.btn-icon.delete').forEach(btn => {
+  btn.addEventListener('click', async function() {
+    const id = this.getAttribute('data-id');
+    if (!confirm('¿Estás seguro de eliminar este ejemplar?')) return;
+    
+    try {
+      console.log("Eliminando ejemplar ID:", id);
+      const response = await fetch(`/api/ejemplares/${id}`, {
+        method: 'DELETE'
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Error al eliminar');
+      }
+      
+      alert('Ejemplar eliminado correctamente');
+      window.location.reload();
+    } catch (error) {
+      console.error('Error:', error);
+      alert(`Error: ${error.message}`);
+    }
+  });
+});
+
+// Animación de carga
+document.head.insertAdjacentHTML('beforeend', `
+  <style>
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    .spin {
+      animation: spin 1s linear infinite;
+    }
+  </style>
+`);
+</script>

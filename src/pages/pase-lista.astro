@@ -1,0 +1,151 @@
+---
+export const prerender = false;
+import db from '../lib/db';
+
+const { rows: usuarios } = await db.query(`
+  SELECT id, nombre, matricula 
+  FROM usuarios
+  ORDER BY nombre
+`);
+
+const { rows: asistenciasHoy } = await db.query(`
+  SELECT usuario_id 
+  FROM visitas 
+  WHERE DATE(fecha_hora) = CURRENT_DATE
+`);
+const presentesHoy = new Set(asistenciasHoy.map(a => a.usuario_id));
+
+const { rows: [{ total }] } = await db.query(`
+  SELECT COUNT(*) as total 
+  FROM visitas 
+  WHERE DATE(fecha_hora) = CURRENT_DATE
+`);
+
+let mensaje = '';
+if (Astro.request.method === 'POST') {
+  const formData = await Astro.request.formData();
+  const usuarioId = formData.get('usuario_id');
+  const accion = formData.get('accion');
+
+  try {
+    if (accion === 'registrar') {
+      await db.query(`INSERT INTO visitas (usuario_id) VALUES ($1)`, [usuarioId]);
+      mensaje = 'Asistencia registrada';
+    } else {
+      await db.query(`DELETE FROM visitas WHERE usuario_id = $1 AND DATE(fecha_hora) = CURRENT_DATE`, [usuarioId]);
+      mensaje = 'Asistencia eliminada';
+    }
+  } catch (e) {
+    mensaje = 'Error: ' + e.message;
+  }
+}
+---
+<!DOCTYPE html>
+<html lang="es" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <title>Pase de Lista Mejorado</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+</head>
+<body class="bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200" x-data="{ filtro: 'todos', busqueda: '', modal: null }">
+  <div class="max-w-4xl mx-auto p-4">
+    <header class="mb-6 flex justify-between items-center">
+      <div>
+        <h1 class="text-2xl font-bold">📋 Pase de Lista</h1>
+        <p class="text-sm">Fecha: {new Date().toLocaleDateString('es-MX')}</p>
+      </div>
+      <div>
+        <button @click="document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light'"
+          class="bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded">🌙 Toggle</button>
+      </div>
+    </header>
+
+    <div class="flex space-x-2 mb-4">
+      <input x-model="busqueda" placeholder="Buscar por nombre o matrícula" class="w-full px-2 py-1 border rounded">
+      <select x-model="filtro" class="border rounded">
+        <option value="todos">Todos</option>
+        <option value="presentes">Presentes</option>
+        <option value="ausentes">Ausentes</option>
+      </select>
+      <a href="/api/exportar-asistencia?formato=pdf" class="bg-purple-600 text-white px-3 py-1 rounded hover:bg-purple-700">PDF</a>
+      <a href="/api/exportar-asistencia?formato=excel" class="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700">Excel</a>
+    </div>
+
+    <div class="grid grid-cols-3 gap-2 mb-4">
+      <div class="text-center">
+        <p class="text-sm">Total registros</p>
+        <p class="text-xl font-bold">{total || 0}</p>
+      </div>
+      <div class="text-center">
+        <p class="text-sm">Presentes</p>
+        <p class="text-xl text-green-600 font-bold">{presentesHoy.size}</p>
+      </div>
+      <div class="text-center">
+        <p class="text-sm">Ausentes</p>
+        <p class="text-xl text-red-600 font-bold">{usuarios.length - presentesHoy.size}</p>
+      </div>
+    </div>
+
+    <table class="min-w-full bg-white dark:bg-gray-800 rounded shadow overflow-hidden">
+      <thead class="bg-gray-100 dark:bg-gray-700">
+        <tr>
+          <th class="text-left px-3 py-2">Nombre</th>
+          <th class="text-left px-3 py-2">Matrícula</th>
+          <th class="px-3 py-2">Asistencia</th>
+          <th class="px-3 py-2">Historial</th>
+        </tr>
+      </thead>
+      <tbody>
+        {usuarios.filter(u => {
+          if (busqueda && !(`${u.nombre} ${u.matricula}`.toLowerCase().includes(busqueda.toLowerCase()))) return false;
+          if (filtro === 'presentes' && !presentesHoy.has(u.id)) return false;
+          if (filtro === 'ausentes' && presentesHoy.has(u.id)) return false;
+          return true;
+        }).map(usuario => (
+          <tr>
+            <td class="px-3 py-2">{usuario.nombre}</td>
+            <td class="px-3 py-2">{usuario.matricula}</td>
+            <td class="px-3 py-2">
+              <form method="POST" @submit.prevent="if(confirm('¿Confirmar acción?')) $el.submit()">
+                <input type="hidden" name="usuario_id" value={usuario.id}>
+                <button name="accion" value={presentesHoy.has(usuario.id) ? 'quitar' : 'registrar'}
+                  class={`px-3 py-1 rounded ${presentesHoy.has(usuario.id) ? 'bg-green-600' : 'bg-blue-600'} text-white`}>
+                  {presentesHoy.has(usuario.id) ? 'Presente' : 'Registrar'}
+                </button>
+              </form>
+            </td>
+            <td class="px-3 py-2">
+              <button @click="modal = {id: usuario.id, nombre: usuario.nombre}" class="text-indigo-600 hover:underline">Ver</button>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+
+    {mensaje && (
+      <div class="fixed bottom-4 right-4 bg-blue-600 text-white px-4 py-2 rounded shadow">{mensaje}</div>
+    )}
+  </div>
+
+  <!-- Modal historial -->
+  <template x-if="modal">
+    <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+      <div class="bg-white dark:bg-gray-800 p-4 rounded w-96 relative">
+        <button @click="modal = null" class="absolute top-2 right-2 text-gray-500">✕</button>
+        <h2 class="text-lg font-bold mb-2">Historial de <span x-text="modal.nombre"></span></h2>
+        <div x-data="{historial: []}" x-init="fetch('/api/historial-asistencia?id='+modal.id).then(r=>r.json()).then(d=>historial=d)">
+          <template x-if="historial.length">
+            <ul class="list-disc pl-4 space-y-1">
+              <template x-for="h in historial">
+                <li x-text="h.fecha_hora"></li>
+              </template>
+            </ul>
+          </template>
+          <p x-show="!historial.length">No hay registros.</p>
+        </div>
+      </div>
+    </div>
+  </template>
+</body>
+</html>

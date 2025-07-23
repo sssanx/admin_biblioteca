@@ -1,186 +1,404 @@
 ---
+// src/pages/prestamos/registrar.astro
 export const prerender = false;
 
 import AdminLayout from '../../layouts/AdminLayout.astro';
 import db from '../../lib/db.js';
 
-const librosResult = await db.query("SELECT id, titulo, categoria FROM libros");
-const userResult = await db.query("SELECT id, nombre FROM usuarios");
+// Consulta de libros corregida (solo con campos existentes)
+const librosResult = await db.query(`
+  SELECT 
+    l.id, 
+    l.titulo, 
+    l.autor, 
+    l.editorial, 
+    l.isbn,
+    l.clasificacion,
+    l.edicion,
+    l.ubicacion,
+    (
+      SELECT COUNT(*) 
+      FROM ejemplares e 
+      WHERE e.libro_id = l.id AND e.estado = 'disponible'
+    ) AS ejemplares_disponibles
+  FROM libros l
+  WHERE l.activo = true
+  AND EXISTS (
+    SELECT 1 FROM ejemplares e 
+    WHERE e.libro_id = l.id AND e.estado = 'disponible'
+  )
+  ORDER BY l.titulo
+`);
+
+// Consulta de usuarios corregida (sin referencia a p.estado y con multas pendientes ajustadas)
+const usuariosQuery = await db.query(`
+  SELECT 
+    u.id,
+    u.nombre,
+    u.matricula,
+    u.email,
+    u.genero,
+    u.vigencia,
+    u.vigencia_indefinida,
+    u.semestre,
+    c.nombre as carrera_nombre,
+    (SELECT COUNT(*) FROM prestamos p 
+     WHERE p.usuario_id = u.id AND p.devuelto = false) AS prestamos_activos,
+    (SELECT COALESCE(SUM(m.monto), 0) FROM multas m 
+     WHERE m.usuario_id = u.id AND m.estado = 'pendiente') AS multas_pendientes
+  FROM usuarios u
+  LEFT JOIN carreras c ON u.carrera_id = c.id
+  WHERE u.es_admin = false 
+  AND (u.vigencia_indefinida = true OR u.vigencia >= CURRENT_DATE)
+  ORDER BY u.nombre
+`);
 
 const libros = librosResult.rows;
-const usuarios = userResult.rows;
+const usuarios = usuariosQuery.rows;
 ---
 
-<AdminLayout title="Registrar Préstamo">
-  <main class="min-h-screen bg-gray-50 font-['Inter']">
-    <div class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-      <div class="bg-white rounded-xl shadow-md p-6 sm:p-8 space-y-6 border border-gray-100">
-
-        <h1 class="text-3xl font-bold text-center text-gray-800">Registrar Nuevo Préstamo</h1>
-        <div class="w-20 h-1 bg-indigo-600 mx-auto rounded-full mb-6"></div>
-
-        <form method="POST" action="/api/prestamo" onsubmit="return validarFormulario()" class="space-y-6">
-          <input type="hidden" name="id_libro" id="id_libro" required />
-          <input type="hidden" name="id_usuario" id="id_usuario" required />
-
-          <!-- Selección de libro -->
-          <div>
-            <label class="block text-sm font-semibold text-gray-700 mb-2">📚 Libro</label>
-            <button type="button" class="btn-primary" id="openLibroModalBtn">Seleccionar libro</button>
-            <span id="libroSeleccionado" class="ml-2 font-medium text-gray-700">Ninguno</span>
+<AdminLayout title="Registrar Nuevo Préstamo">
+  <main class="min-h-screen bg-gray-50">
+    <div class="max-w-4xl mx-auto px-4 py-8">
+      <div class="bg-white rounded-xl shadow-md p-6 sm:p-8 space-y-6">
+        <h1 class="text-2xl font-bold text-center">Registrar Nuevo Préstamo</h1>
+        
+        <form id="prestamoForm" class="space-y-6">
+          <!-- Selección de libro simplificada -->
+          <div class="space-y-3">
+            <label class="block font-medium">Libro a prestar</label>
+            <button type="button" id="selectLibroBtn" class="w-full flex items-center justify-between px-4 py-3 bg-gray-100 rounded-lg hover:bg-gray-200">
+              <span id="libroPlaceholder">Seleccionar libro</span>
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+              </svg>
+            </button>
+            <div id="libroInfo" class="hidden p-4 bg-gray-50 rounded-lg">
+              <h3 id="libroTitulo" class="font-bold text-lg"></h3>
+              <div class="grid grid-cols-2 gap-2 mt-2 text-sm">
+                <div><span class="text-gray-600">Autor:</span> <span id="libroAutor"></span></div>
+                <div><span class="text-gray-600">ISBN:</span> <span id="libroIsbn"></span></div>
+                <div><span class="text-gray-600">Editorial:</span> <span id="libroEditorial"></span></div>
+                <div><span class="text-gray-600">Clasificación:</span> <span id="libroClasificacion"></span></div>
+                <div><span class="text-gray-600">Edición:</span> <span id="libroEdicion"></span></div>
+                <div><span class="text-gray-600">Ubicación:</span> <span id="libroUbicacion"></span></div>
+                <div><span class="text-gray-600">Disponibles:</span> <span id="libroDisponibles" class="font-bold text-green-600"></span></div>
+              </div>
+            </div>
           </div>
 
           <!-- Selección de usuario -->
-          <div>
-            <label class="block text-sm font-semibold text-gray-700 mb-2">👤 Usuario</label>
-            <button type="button" class="btn-primary" id="openUsuarioModalBtn">Seleccionar usuario</button>
-            <span id="usuarioSeleccionado" class="ml-2 font-medium text-gray-700">Ninguno</span>
+          <div class="space-y-3">
+            <label class="block font-medium">Usuario</label>
+            <button type="button" id="selectUsuarioBtn" class="w-full flex items-center justify-between px-4 py-3 bg-gray-100 rounded-lg hover:bg-gray-200">
+              <span id="usuarioPlaceholder">Seleccionar usuario</span>
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+              </svg>
+            </button>
+            <div id="usuarioInfo" class="hidden p-4 bg-gray-50 rounded-lg">
+              <h3 id="usuarioNombre" class="font-bold text-lg"></h3>
+              <div class="grid grid-cols-2 gap-2 mt-2 text-sm">
+                <div><span class="text-gray-600">Matrícula:</span> <span id="usuarioMatricula"></span></div>
+                <div><span class="text-gray-600">Carrera:</span> <span id="usuarioCarrera"></span></div>
+                <div><span class="text-gray-600">Email:</span> <span id="usuarioEmail"></span></div>
+                <div><span class="text-gray-600">Género:</span> <span id="usuarioGenero"></span></div>
+                <div><span class="text-gray-600">Semestre:</span> <span id="usuarioSemestre"></span></div>
+                <div><span class="text-gray-600">Préstamos activos:</span> <span id="usuarioPrestamos" class="font-bold"></span></div>
+                <div><span class="text-gray-600">Multas pendientes:</span> <span id="usuarioMultas" class="font-bold text-red-600"></span></div>
+                <div><span class="text-gray-600">Vigencia:</span> <span id="usuarioVigencia"></span></div>
+              </div>
+            </div>
           </div>
 
-          <!-- Duración -->
-          <div>
-            <label class="block text-sm font-semibold text-gray-700 mb-2">⏳ Duración del préstamo (días)</label>
-            <input type="number" name="duracion" min="1" value="5" required class="input-field" />
+          <!-- Duración del préstamo -->
+          <div class="space-y-3">
+            <label for="duracion" class="block font-medium">Duración del préstamo (días)</label>
+            <select id="duracion" name="duracion" class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500">
+              <option value="7">7 días</option>
+              <option value="14">14 días</option>
+              <option value="21">21 días</option>
+              <option value="30">30 días</option>
+            </select>
           </div>
 
-          <div id="errorMsg" class="text-red-600 font-semibold"></div>
+          <!-- Observaciones -->
+          <div class="space-y-3">
+            <label for="observaciones" class="block font-medium">Observaciones (opcional)</label>
+            <textarea id="observaciones" name="observaciones" rows="3" class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500"></textarea>
+          </div>
 
-          <button type="submit" class="btn-primary w-full">
-            📚 Prestar libro
+          <!-- Mensajes de error -->
+          <div id="errorMessage" class="hidden p-3 bg-red-100 text-red-700 rounded-lg"></div>
+
+          <!-- Botón de envío -->
+          <button type="submit" class="w-full py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">
+            Registrar Préstamo
           </button>
         </form>
       </div>
     </div>
 
-    <!-- Modal Libro -->
-    <div id="modalLibro" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div class="bg-white rounded-xl shadow-lg max-w-lg w-full p-6 relative">
-        <button id="closeLibroModal" class="absolute top-3 right-3 text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
-        <h3 class="text-xl font-bold mb-3">Selecciona un libro</h3>
-        <input type="text" id="filtroLibro" placeholder="Buscar por título o categoría..." class="input-field mb-3" />
-        <ul id="listaLibros" class="divide-y divide-gray-200 max-h-64 overflow-y-auto">
-          {libros.length === 0 ? (
-            <li class="text-center text-gray-500 italic py-2">No hay libros disponibles.</li>
-          ) : (
-            libros.map(libro => (
-              <li class="p-2 hover:bg-gray-50 cursor-pointer" onclick={`seleccionarLibro(${libro.id}, '${libro.titulo.replace(/'/g, "\\'")}')`}>
-                {libro.titulo} ({libro.categoria || "Sin categoría"})
+    <!-- Modal para selección de libros -->
+    <div id="libroModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-black bg-opacity-50">
+      <div class="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[80vh] flex flex-col">
+        <div class="p-4 border-b sticky top-0 bg-white">
+          <div class="flex justify-between items-center">
+            <h3 class="text-xl font-bold">Seleccionar Libro ({libros.length} disponibles)</h3>
+            <button id="closeLibroModal" class="text-gray-500 hover:text-gray-700">&times;</button>
+          </div>
+          <input type="text" id="searchLibro" placeholder="Buscar por título o autor..." class="w-full mt-3 px-4 py-2 border rounded-lg" />
+        </div>
+        <div class="overflow-y-auto">
+          <ul id="libroList" class="divide-y">
+            {libros.map(libro => (
+              <li class="p-4 hover:bg-gray-50 cursor-pointer"
+                  data-id={libro.id}
+                  data-titulo={libro.titulo}
+                  data-autor={libro.autor}
+                  data-isbn={libro.isbn}
+                  data-editorial={libro.editorial}
+                  data-clasificacion={libro.clasificacion}
+                  data-edicion={libro.edicion}
+                  data-ubicacion={libro.ubicacion}
+                  data-disponibles={libro.ejemplares_disponibles}>
+                <div class="font-medium">{libro.titulo}</div>
+                <div class="text-sm text-gray-600">
+                  <span>{libro.autor}</span>
+                  <span class="ml-3 font-bold text-green-600">{libro.ejemplares_disponibles} disponible(s)</span>
+                </div>
+                <div class="text-xs text-gray-500 mt-1">
+                  <span>ISBN: {libro.isbn}</span>
+                  <span class="ml-3">Edición: {libro.edicion}</span>
+                  <span class="ml-3">Ubicación: {libro.ubicacion}</span>
+                </div>
               </li>
-            ))
-          )}
-        </ul>
+            ))}
+          </ul>
+        </div>
       </div>
     </div>
 
-    <!-- Modal Usuario -->
-    <div id="modalUsuario" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div class="bg-white rounded-xl shadow-lg max-w-lg w-full p-6 relative">
-        <button id="closeUsuarioModal" class="absolute top-3 right-3 text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
-        <h3 class="text-xl font-bold mb-3">Selecciona un usuario</h3>
-        <input type="text" id="filtroUsuario" placeholder="Buscar por nombre..." class="input-field mb-3" />
-        <ul id="listaUsuarios" class="divide-y divide-gray-200 max-h-64 overflow-y-auto">
-          {usuarios.length === 0 ? (
-            <li class="text-center text-gray-500 italic py-2">No hay usuarios disponibles.</li>
-          ) : (
-            usuarios.map(u => (
-              <li class="p-2 hover:bg-gray-50 cursor-pointer" onclick={`seleccionarUsuario(${u.id}, '${u.nombre.replace(/'/g, "\\'")}')`}>
-                {u.nombre}
+    <!-- Modal para selección de usuarios -->
+    <div id="usuarioModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-black bg-opacity-50">
+      <div class="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[80vh] flex flex-col">
+        <div class="p-4 border-b sticky top-0 bg-white">
+          <div class="flex justify-between items-center">
+            <h3 class="text-xl font-bold">Seleccionar Usuario ({usuarios.length} disponibles)</h3>
+            <button id="closeUsuarioModal" class="text-gray-500 hover:text-gray-700">&times;</button>
+          </div>
+          <input type="text" id="searchUsuario" placeholder="Buscar por nombre o matrícula..." class="w-full mt-3 px-4 py-2 border rounded-lg" />
+        </div>
+        <div class="overflow-y-auto">
+          <ul id="usuarioList" class="divide-y">
+            {usuarios.map(usuario => (
+              <li class="p-4 hover:bg-gray-50 cursor-pointer"
+                  data-id={usuario.id}
+                  data-nombre={usuario.nombre}
+                  data-matricula={usuario.matricula}
+                  data-carrera={usuario.carrera_nombre || 'No especificada'}
+                  data-email={usuario.email}
+                  data-genero={usuario.genero === 'M' ? 'Masculino' : 'Femenino'}
+                  data-semestre={usuario.semestre || 'No especificado'}
+                  data-prestamos={usuario.prestamos_activos}
+                  data-multas={usuario.multas_pendientes}
+                  data-vigencia={usuario.vigencia_indefinida ? 'Indefinida' : new Date(usuario.vigencia).toLocaleDateString()}>
+                <div class="font-medium">{usuario.nombre}</div>
+                <div class="text-sm text-gray-600">
+                  <span>Matrícula: {usuario.matricula}</span>
+                  <span class="ml-3">Carrera: {usuario.carrera_nombre || 'No especificada'}</span>
+                </div>
+                <div class="text-xs text-gray-500 mt-1">
+                  <span class={usuario.prestamos_activos > 0 ? 'text-yellow-600 font-bold' : ''}>
+                    {usuario.prestamos_activos} préstamo(s) activo(s)
+                  </span>
+                  <span class={usuario.multas_pendientes > 0 ? 'text-red-600 font-bold ml-3' : 'ml-3'}>
+                    Multas: ${usuario.multas_pendientes}
+                  </span>
+                </div>
               </li>
-            ))
-          )}
-        </ul>
+            ))}
+          </ul>
+        </div>
       </div>
     </div>
-
-    <style>
-      .btn-primary {
-        @apply inline-flex items-center justify-center gap-2 bg-indigo-600 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-indigo-700 transition-all duration-300;
-      }
-
-      .input-field {
-        @apply w-full px-4 py-2.5 rounded-lg bg-white border border-gray-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100;
-      }
-    </style>
 
     <script>
-      const modalLibro = document.getElementById("modalLibro");
-      const openLibroModalBtn = document.getElementById("openLibroModalBtn");
-      const closeLibroModalBtn = document.getElementById("closeLibroModal");
-      const filtroLibroInput = document.getElementById("filtroLibro");
-      const listaLibros = document.getElementById("listaLibros");
-      const libroSeleccionadoSpan = document.getElementById("libroSeleccionado");
-      const idLibroInput = document.getElementById("id_libro");
-
-      const modalUsuario = document.getElementById("modalUsuario");
-      const openUsuarioModalBtn = document.getElementById("openUsuarioModalBtn");
-      const closeUsuarioModalBtn = document.getElementById("closeUsuarioModal");
-      const filtroUsuarioInput = document.getElementById("filtroUsuario");
-      const listaUsuarios = document.getElementById("listaUsuarios");
-      const usuarioSeleccionadoSpan = document.getElementById("usuarioSeleccionado");
-      const idUsuarioInput = document.getElementById("id_usuario");
-
-      openLibroModalBtn.onclick = () => {
-        modalLibro.classList.remove("hidden");
-        filtroLibroInput.value = "";
-        filtrarLibros("");
-        filtroLibroInput.focus();
-      };
-      closeLibroModalBtn.onclick = () => modalLibro.classList.add("hidden");
-
-      openUsuarioModalBtn.onclick = () => {
-        modalUsuario.classList.remove("hidden");
-        filtroUsuarioInput.value = "";
-        filtrarUsuarios("");
-        filtroUsuarioInput.focus();
-      };
-      closeUsuarioModalBtn.onclick = () => modalUsuario.classList.add("hidden");
-
-      window.onclick = (e) => {
-        if (e.target === modalLibro) modalLibro.classList.add("hidden");
-        if (e.target === modalUsuario) modalUsuario.classList.add("hidden");
-      };
-
-      window.seleccionarLibro = (id, titulo) => {
-        idLibroInput.value = id;
-        libroSeleccionadoSpan.textContent = titulo;
-        modalLibro.classList.add("hidden");
-        document.getElementById("errorMsg").textContent = "";
-      };
-
-      window.seleccionarUsuario = (id, nombre) => {
-        idUsuarioInput.value = id;
-        usuarioSeleccionadoSpan.textContent = nombre;
-        modalUsuario.classList.add("hidden");
-        document.getElementById("errorMsg").textContent = "";
-      };
-
-      filtroLibroInput.addEventListener("input", () => filtrarLibros(filtroLibroInput.value.toLowerCase()));
-      function filtrarLibros(texto) {
-        for (const li of listaLibros.children) {
-          const textoLi = li.textContent.toLowerCase();
-          li.style.display = textoLi.includes(texto) ? "" : "none";
+      // Elementos del DOM
+      const prestamoForm = document.getElementById('prestamoForm');
+      const errorMessage = document.getElementById('errorMessage');
+      
+      // Funcionalidad del modal de libros
+      const libroModal = document.getElementById('libroModal');
+      const selectLibroBtn = document.getElementById('selectLibroBtn');
+      const closeLibroModal = document.getElementById('closeLibroModal');
+      const searchLibro = document.getElementById('searchLibro');
+      const libroList = document.getElementById('libroList');
+      
+      // Funcionalidad del modal de usuarios
+      const usuarioModal = document.getElementById('usuarioModal');
+      const selectUsuarioBtn = document.getElementById('selectUsuarioBtn');
+      const closeUsuarioModal = document.getElementById('closeUsuarioModal');
+      const searchUsuario = document.getElementById('searchUsuario');
+      const usuarioList = document.getElementById('usuarioList');
+      
+      // Campos del formulario
+      const libroIdInput = document.createElement('input');
+      libroIdInput.type = 'hidden';
+      libroIdInput.name = 'libro_id';
+      libroIdInput.id = 'libro_id';
+      prestamoForm.prepend(libroIdInput);
+      
+      const libroPlaceholder = document.getElementById('libroPlaceholder');
+      const libroInfo = document.getElementById('libroInfo');
+      const libroTitulo = document.getElementById('libroTitulo');
+      const libroAutor = document.getElementById('libroAutor');
+      const libroIsbn = document.getElementById('libroIsbn');
+      const libroEditorial = document.getElementById('libroEditorial');
+      const libroClasificacion = document.getElementById('libroClasificacion');
+      const libroEdicion = document.getElementById('libroEdicion');
+      const libroUbicacion = document.getElementById('libroUbicacion');
+      const libroDisponibles = document.getElementById('libroDisponibles');
+      
+      const usuarioIdInput = document.createElement('input');
+      usuarioIdInput.type = 'hidden';
+      usuarioIdInput.name = 'usuario_id';
+      usuarioIdInput.id = 'usuario_id';
+      prestamoForm.appendChild(usuarioIdInput);
+      
+      const usuarioPlaceholder = document.getElementById('usuarioPlaceholder');
+      const usuarioInfo = document.getElementById('usuarioInfo');
+      const usuarioNombre = document.getElementById('usuarioNombre');
+      const usuarioMatricula = document.getElementById('usuarioMatricula');
+      const usuarioCarrera = document.getElementById('usuarioCarrera');
+      const usuarioEmail = document.getElementById('usuarioEmail');
+      const usuarioGenero = document.getElementById('usuarioGenero');
+      const usuarioSemestre = document.getElementById('usuarioSemestre');
+      const usuarioPrestamos = document.getElementById('usuarioPrestamos');
+      const usuarioMultas = document.getElementById('usuarioMultas');
+      const usuarioVigencia = document.getElementById('usuarioVigencia');
+      
+      // Abrir modales
+      selectLibroBtn.addEventListener('click', () => {
+        libroModal.classList.remove('hidden');
+        searchLibro.focus();
+      });
+      
+      selectUsuarioBtn.addEventListener('click', () => {
+        usuarioModal.classList.remove('hidden');
+        searchUsuario.focus();
+      });
+      
+      // Cerrar modales
+      closeLibroModal.addEventListener('click', () => {
+        libroModal.classList.add('hidden');
+      });
+      
+      closeUsuarioModal.addEventListener('click', () => {
+        usuarioModal.classList.add('hidden');
+      });
+      
+      // Buscar libros
+      searchLibro.addEventListener('input', (e) => {
+        const searchTerm = e.target.value.toLowerCase();
+        Array.from(libroList.children).forEach(item => {
+          const text = item.textContent.toLowerCase();
+          item.style.display = text.includes(searchTerm) ? '' : 'none';
+        });
+      });
+      
+      // Seleccionar libro
+      libroList.addEventListener('click', (e) => {
+        const li = e.target.closest('li');
+        if (!li) return;
+        
+        libroIdInput.value = li.dataset.id;
+        libroPlaceholder.textContent = 'Cambiar libro';
+        libroTitulo.textContent = li.dataset.titulo;
+        libroAutor.textContent = li.dataset.autor;
+        libroIsbn.textContent = li.dataset.isbn;
+        libroEditorial.textContent = li.dataset.editorial;
+        libroClasificacion.textContent = li.dataset.clasificacion;
+        libroEdicion.textContent = li.dataset.edicion;
+        libroUbicacion.textContent = li.dataset.ubicacion;
+        libroDisponibles.textContent = li.dataset.disponibles;
+        
+        libroInfo.classList.remove('hidden');
+        libroModal.classList.add('hidden');
+        errorMessage.classList.add('hidden');
+      });
+      
+      // Buscar usuarios
+      searchUsuario.addEventListener('input', (e) => {
+        const searchTerm = e.target.value.toLowerCase();
+        Array.from(usuarioList.children).forEach(item => {
+          const text = item.textContent.toLowerCase();
+          item.style.display = text.includes(searchTerm) ? '' : 'none';
+        });
+      });
+      
+      // Seleccionar usuario
+      usuarioList.addEventListener('click', (e) => {
+        const li = e.target.closest('li');
+        if (!li) return;
+        
+        usuarioIdInput.value = li.dataset.id;
+        usuarioPlaceholder.textContent = 'Cambiar usuario';
+        usuarioNombre.textContent = li.dataset.nombre;
+        usuarioMatricula.textContent = li.dataset.matricula;
+        usuarioCarrera.textContent = li.dataset.carrera;
+        usuarioEmail.textContent = li.dataset.email;
+        usuarioGenero.textContent = li.dataset.genero;
+        usuarioSemestre.textContent = li.dataset.semestre;
+        usuarioPrestamos.textContent = li.dataset.prestamos;
+        usuarioMultas.textContent = `$${li.dataset.multas}`;
+        usuarioVigencia.textContent = li.dataset.vigencia;
+        
+        usuarioInfo.classList.remove('hidden');
+        usuarioModal.classList.add('hidden');
+        errorMessage.classList.add('hidden');
+      });
+      
+      // Enviar formulario
+      prestamoForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        // Validación
+        if (!libroIdInput.value || !usuarioIdInput.value) {
+          errorMessage.textContent = 'Debes seleccionar un libro y un usuario';
+          errorMessage.classList.remove('hidden');
+          return;
         }
-      }
-
-      filtroUsuarioInput.addEventListener("input", () => filtrarUsuarios(filtroUsuarioInput.value.toLowerCase()));
-      function filtrarUsuarios(texto) {
-        for (const li of listaUsuarios.children) {
-          const textoLi = li.textContent.toLowerCase();
-          li.style.display = textoLi.includes(texto) ? "" : "none";
+        
+        const formData = new FormData(prestamoForm);
+        
+        try {
+          const response = await fetch('/api/prestamos', {
+            method: 'POST',
+            body: formData,
+            headers: { 'Accept': 'application/json' }
+          });
+          
+          const data = await response.json();
+          
+          if (data.success) {
+            window.location.href = `/libros/prestamos`;
+          } else {
+            errorMessage.textContent = data.error || 'Error al registrar el préstamo';
+            errorMessage.classList.remove('hidden');
+          }
+        } catch (error) {
+          console.error('Error:', error);
+          errorMessage.textContent = 'Error de conexión con el servidor';
+          errorMessage.classList.remove('hidden');
         }
-      }
-
-      function validarFormulario() {
-        const libro = idLibroInput.value.trim();
-        const usuario = idUsuarioInput.value.trim();
-
-        if (!libro || !usuario) {
-          document.getElementById("errorMsg").textContent = "⚠️ Selecciona un libro y un usuario.";
-          return false;
-        }
-
-        return true;
-      }
+      });
+      
+      // Cerrar modales al hacer clic fuera
+      window.addEventListener('click', (e) => {
+        if (e.target === libroModal) libroModal.classList.add('hidden');
+        if (e.target === usuarioModal) usuarioModal.classList.add('hidden');
+      });
     </script>
   </main>
 </AdminLayout>

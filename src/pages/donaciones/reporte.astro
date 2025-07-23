@@ -1,0 +1,18 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { getPdfBuffer } from '../../lib/pdfGenerator';
+
+const url = new URL(Astro.request.url);
+const reporteData = JSON.parse(decodeURIComponent(url.searchParams.get('data') || '{}'));
+
+// Generar PDF
+const pdfBuffer = await getPdfBuffer(reporteData);
+
+// Devolver como respuesta PDF
+return new Response(pdfBuffer, {
+  headers: {
+    'Content-Type': 'application/pdf',
+    'Content-Disposition': `attachment; filename="reporte_donaciones_${new Date().toISOString().slice(0,10)}.pdf"`
+  }
+});
+---

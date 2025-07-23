@@ -1,43 +1,27 @@
 ---
-import db from "../../lib/db.js";
-const result = await db.query("SELECT id, titulo, autor, isbn FROM libros LIMIT 20"); // o según filtros
-const libros = result.rows;
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import db from '../../lib/db.js';
+
+const libros = await db.query('SELECT id, titulo, autor, isbn FROM libros');
 ---
 
-<style>
-  .etiqueta {
-    border: 1px solid #ccc;
-    padding: 1rem;
-    margin: 0.5rem;
-    display: inline-block;
-    width: 250px;
-    height: 120px;
-    font-family: Arial, sans-serif;
-    font-size: 12px;
-    text-align: center;
-    box-shadow: 2px 2px 8px rgba(0,0,0,0.1);
-  }
-  .barcode {
-    font-size: 24px;
-    margin: 0.5rem 0;
-  }
-  @media print {
-    body { background: white; }
-    button { display: none; }
-  }
-</style>
-
-<div>
-  <h2>Etiquetas de códigos de barras</h2>
-  <button onclick="window.print()">🖨️ Imprimir etiquetas</button>
-  <div style="display: flex; flex-wrap: wrap;">
-    {libros.map(libro => (
-      <div class="etiqueta">
-        <strong>{libro.titulo}</strong><br />
-        <em>{libro.autor}</em><br />
-        <div class="barcode">*{libro.isbn || libro.id}*</div>
-        <small>ISBN: {libro.isbn}</small>
-      </div>
-    ))}
+<AdminLayout title="Generar Etiquetas MARC">
+  <div class="container mx-auto p-4">
+    <h1 class="text-2xl font-bold mb-6">Generar Etiquetas MARC</h1>
+    
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {libros.rows.map(libro => (
+        <div class="bg-white p-4 rounded-lg shadow">
+          <h3 class="font-bold">{libro.titulo}</h3>
+          <p class="text-sm text-gray-600">{libro.autor}</p>
+          <a 
+            href={`/libros/etiquetas/${libro.id}`} 
+            class="mt-2 inline-block bg-blue-100 text-blue-800 px-3 py-1 rounded text-sm"
+          >
+            Ver Etiqueta
+          </a>
+        </div>
+      ))}
+    </div>
   </div>
-</div>
+</AdminLayout>

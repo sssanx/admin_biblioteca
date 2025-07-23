@@ -1,0 +1,124 @@
+---
+// src/pages/ejemplares/agregar.astro
+import db from '../../lib/db.js';
+
+// Obtener ID del libro desde la URL
+const url = new URL(Astro.request.url);
+const libroId = url.searchParams.get('libroId');
+
+// Procesar envío del formulario
+if (Astro.request.method === 'POST') {
+  const formData = await Astro.request.formData();
+  
+  await db.query(`
+    INSERT INTO ejemplares (
+      libro_id,
+      codigo_barras,
+      numero_adquisicion,
+      ubicacion_especifica,
+      estado,
+      numero_ejemplar
+    ) VALUES ($1, $2, $3, $4, $5, $6)
+  `, [
+    libroId,
+    formData.get('codigo_barras'),
+    formData.get('numero_adquisicion'),
+    formData.get('ubicacion'),
+    'disponible', // Estado por defecto
+    formData.get('numero_ejemplar')
+  ]);
+
+  // Redirigir al listado
+  return Astro.redirect(`/libros/detalle?id=${libroId}&success=Ejemplar+agregado`);
+}
+
+// Obtener info del libro
+const { rows: [libro] } = await db.query('SELECT * FROM libros WHERE id = $1', [libroId]);
+
+// Obtener último número de ejemplar para sugerir el siguiente
+const { rows: [{ max }] } = await db.query(
+  'SELECT COALESCE(MAX(numero_ejemplar), 0) AS max FROM ejemplares WHERE libro_id = $1',
+  [libroId]
+);
+---
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Agregar Ejemplar</title>
+</head>
+<body class="bg-gray-50">
+  <div class="container mx-auto p-4 max-w-2xl">
+    <h1 class="text-2xl font-bold mb-6">
+      Agregar Ejemplar: <span class="text-blue-600">${libro.titulo}</span>
+    </h1>
+    
+    <form method="POST" class="bg-white p-6 rounded-lg shadow-md">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        
+        <!-- Número de Ejemplar (autoincremental) -->
+        <div class="mb-4">
+          <label class="block font-medium mb-2">Número de Ejemplar</label>
+          <input 
+            type="number" 
+            name="numero_ejemplar" 
+            value="${max + 1}"
+            required
+            class="w-full p-2 border rounded"
+          >
+        </div>
+        
+        <!-- Código de Barras -->
+        <div class="mb-4">
+          <label class="block font-medium mb-2">Código de Barras</label>
+          <input 
+            type="text" 
+            name="codigo_barras" 
+            required
+            placeholder="Escanear código..."
+            class="w-full p-2 border rounded"
+          >
+        </div>
+        
+        <!-- Número de Adquisición -->
+        <div class="mb-4 md:col-span-2">
+          <label class="block font-medium mb-2">Número de Adquisición</label>
+          <input 
+            type="text" 
+            name="numero_adquisicion" 
+            value="INV-${new Date().getFullYear()}-"
+            required
+            class="w-full p-2 border rounded"
+          >
+        </div>
+        
+        <!-- Ubicación -->
+        <div class="mb-4 md:col-span-2">
+          <label class="block font-medium mb-2">Ubicación Física</label>
+          <input 
+            type="text" 
+            name="ubicacion" 
+            placeholder="Ej. Estante A2, Sección 3"
+            required
+            class="w-full p-2 border rounded"
+          >
+        </div>
+        
+        <!-- Botón -->
+        <div class="md:col-span-2 mt-4">
+          <button type="submit" class="w-full bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700">
+            Guardar Ejemplar
+          </button>
+        </div>
+      </div>
+    </form>
+    
+    <div class="mt-6">
+      <a href="/libros/detalle?id=${libroId}" class="text-blue-600 hover:underline">
+        ← Volver al detalle del libro
+      </a>
+    </div>
+  </div>
+</body>
+</html>

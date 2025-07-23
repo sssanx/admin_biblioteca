@@ -1,42 +1,65 @@
 export const prerender = false;
-
-import db from "../../lib/db.js";
+import db from '../../lib/db.js';
 
 export async function POST({ request }) {
+  const client = await db.connect();
   try {
     const form = await request.formData();
-    const idPrestamo = parseInt(form.get("id_prestamo"));
+    const idPrestamo = Number(form.get('id_prestamo'));
 
-    // Obtener ID del libro para volverlo disponible
-    const { rows } = await db.query("SELECT id_libro FROM prestamos WHERE id = $1", [idPrestamo]);
-    const idLibro = rows[0]?.id_libro;
-
-    if (!idLibro) {
-      return new Response("Préstamo no encontrado", { status: 404 });
+    /* 1 . Obtener el ejemplar asociado y comprobar que siga activo */
+    const { rows } = await client.query(
+      `SELECT ejemplar_id
+         FROM prestamos
+        WHERE id        = $1
+          AND devuelto  = false`,
+      [idPrestamo]
+    );
+    if (rows.length === 0) {
+      return new Response('Préstamo no encontrado', { status: 404 });
     }
+    const ejemplarId = rows[0].ejemplar_id;
 
-    // Primero verifica si hay multa asociada
-    const multa = await db.query("SELECT id FROM multas WHERE id_prestamo = $1", [idPrestamo]);
+    /* 2 . Transacción */
+    await client.query('BEGIN');
 
-    // Si existe multa, elimina primero la multa
-    if (multa.rows.length > 0) {
-      await db.query("DELETE FROM multas WHERE id_prestamo = $1", [idPrestamo]);
-    }
+    // 2 a) Marcar préstamo como devuelto
+    await client.query(
+      `UPDATE prestamos
+          SET devuelto        = true,
+              fecha_devolucion = NOW()
+        WHERE id = $1`,
+      [idPrestamo]
+    );
 
-    // Eliminar el préstamo
-    await db.query("DELETE FROM prestamos WHERE id = $1", [idPrestamo]);
+    // 2 b) Liberar el ejemplar
+    await client.query(
+      `UPDATE ejemplares
+          SET estado = 'disponible'
+        WHERE id = $1`,
+      [ejemplarId]
+    );
 
-    // Marcar libro como disponible
-    await db.query("UPDATE libros SET disponible = true WHERE id = $1", [idLibro]);
+    // 2 c) Si hubiera multa pendiente, la eliminamos
+    await client.query(
+      `DELETE FROM multas
+        WHERE id_prestamo = $1`,
+      [idPrestamo]
+    );
 
-    // Redirigir a una ruta válida que sí existe
+    await client.query('COMMIT');
+
+    /* 3 . Redirigir al listado de préstamos */
     return new Response(null, {
-      status: 302,
-      headers: { Location: "/libros/prestamos" }, // ← ruta válida confirmada por tus logs
+      status: 303,
+      headers: { Location: '/libros/prestamos' }   // ← tu vista de préstamos
     });
 
-  } catch (error) {
-    console.error("Error al devolver libro:", error);
-    return new Response("Error interno", { status: 500 });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(()=>{});
+    console.error('Error al devolver:', err);
+    return new Response('Error interno', { status: 500 });
+  } finally {
+    client.release();
   }
 }

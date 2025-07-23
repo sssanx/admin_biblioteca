@@ -1,0 +1,112 @@
+---
+import db from "../lib/db";
+
+export async function POST({ request }) {
+  const formData = await request.formData();
+  const action = formData.get("action");
+  const id_prestamo = formData.get("id_prestamo");
+
+  let message = "";
+  let error = "";
+
+  if (!id_prestamo) {
+    return new Response(
+      JSON.stringify({ success: false, error: "Falta el id_prestamo." }),
+      { status: 400, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
+  if (action === "generar") {
+    // Comprobar si ya hay multa pendiente
+    const multaExistente = await db.query(
+      `SELECT id FROM multas WHERE id_prestamo = $1 AND estado = 'pendiente'`,
+      [id_prestamo]
+    );
+
+    if (multaExistente.rowCount > 0) {
+      error = "Ya existe una multa pendiente para este préstamo.";
+    } else {
+      // Traer préstamo
+      const prestamoRes = await db.query(
+        `SELECT fecha_devolucion_esperada
+         FROM prestamos
+         WHERE id = $1`,
+        [id_prestamo]
+      );
+
+      if (prestamoRes.rowCount === 0) {
+        error = "Préstamo no encontrado.";
+      } else {
+        const fechaEsperada = prestamoRes.rows[0].fecha_devolucion_esperada;
+        const hoy = new Date();
+        const fechaLimite = new Date(fechaEsperada);
+
+        if (hoy <= fechaLimite) {
+          error = "El préstamo no está vencido. No se puede generar multa.";
+        } else {
+          // Monto inicial
+          const montoInicial = 50;
+
+          await db.query(
+            `INSERT INTO multas (id_prestamo, monto, estado, fecha_creacion)
+             VALUES ($1, $2, 'pendiente', NOW())`,
+            [id_prestamo, montoInicial]
+          );
+
+          message = "Multa generada correctamente con monto inicial de $50.";
+        }
+      }
+    }
+  } else if (action === "pagar") {
+    // Obtener multa pendiente
+    const multaRes = await db.query(
+      `SELECT id, monto, fecha_creacion
+       FROM multas
+       WHERE id_prestamo = $1 AND estado = 'pendiente'`,
+      [id_prestamo]
+    );
+
+    if (multaRes.rowCount === 0) {
+      error = "Multa no encontrada o ya pagada.";
+    } else {
+      const multa = multaRes.rows[0];
+      const fechaCreacion = new Date(multa.fecha_creacion);
+      const hoy = new Date();
+
+      const diffMs = hoy - fechaCreacion;
+      const diasExtra = Math.max(Math.floor(diffMs / (1000 * 60 * 60 * 24)), 0);
+      const aumento = diasExtra * 10;
+      const montoFinal = multa.monto + aumento;
+
+      // Marcar multa como pagada
+      await db.query(
+        `UPDATE multas
+         SET estado = 'pagada',
+             fecha_pago = NOW(),
+             monto = $1
+         WHERE id = $2`,
+        [montoFinal, multa.id]
+      );
+
+      // Marcar préstamo como devuelto si no tiene fecha_devolucion
+      await db.query(
+        `UPDATE prestamos
+         SET fecha_devolucion = NOW()
+         WHERE id = $1 AND fecha_devolucion IS NULL`,
+        [id_prestamo]
+      );
+
+      message = `Multa pagada correctamente. Monto final: $${montoFinal}. Préstamo marcado como devuelto.`;
+    }
+  } else {
+    error = "Acción no reconocida.";
+  }
+
+  return new Response(
+    JSON.stringify({ success: !error, message, error }),
+    {
+      status: 200,
+      headers: { "Content-Type": "application/json" }
+    }
+  );
+}

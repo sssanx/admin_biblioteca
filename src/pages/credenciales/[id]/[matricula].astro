@@ -1,0 +1,69 @@
+---
+import db from '../../../lib/db';
+
+const { matricula } = Astro.params;
+
+// Consulta a la base de datos usando la matrícula
+const { rows: [usuario] } = await db.query(`
+  SELECT 
+    u.*,
+    c.fecha_expiracion,
+    carr.nombre AS carrera
+  FROM usuarios u
+  JOIN credenciales c ON u.id = c.usuario_id
+  LEFT JOIN carreras carr ON u.carrera_id = carr.id
+  WHERE u.matricula = $1
+`, [matricula]);
+
+if (!usuario) {
+  return new Response('Credencial no encontrada', { status: 404 });
+}
+
+const fechaExpiracion = usuario.fecha_expiracion
+  ? new Date(usuario.fecha_expiracion).toLocaleDateString('es-ES')
+  : 'INDEFINida';
+---
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Verificación de Credencial</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+  <div class="bg-white shadow-lg rounded-lg p-6 w-full max-w-md">
+    <h1 class="text-xl font-bold text-center mb-4 text-blue-700">
+      Verificación de Credencial
+    </h1>
+
+    <div class="flex gap-4 items-start mb-4">
+      {usuario.foto_url ? (
+        <img src={usuario.foto_url} alt="Foto del usuario" class="w-20 h-20 object-cover border rounded"/>
+      ) : (
+        <div class="w-20 h-20 bg-gray-200 border rounded flex items-center justify-center">
+          <i class="fas fa-user text-2xl text-gray-500"></i>
+        </div>
+      )}
+
+      <div>
+        <h2 class="text-lg font-semibold">{usuario.nombre}</h2>
+        <p class="text-sm text-gray-600">{usuario.email || usuario.correo}</p>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-2 text-sm">
+      <div><span class="font-semibold">Matrícula:</span> {usuario.matricula}</div>
+      <div><span class="font-semibold">Carrera:</span> {usuario.carrera || 'N/A'}</div>
+      <div><span class="font-semibold">Semestre:</span> {usuario.semestre || 'N/A'}</div>
+      <div><span class="font-semibold">Expira:</span> {fechaExpiracion}</div>
+      <div><span class="font-semibold">Tipo:</span> {usuario.rol === 'admin' ? 'Administrador' : 'Estudiante'}</div>
+    </div>
+
+    <div class="mt-4 text-center text-xs text-gray-500">
+      Esta credencial fue verificada exitosamente.
+    </div>
+  </div>
+</body>
+</html>

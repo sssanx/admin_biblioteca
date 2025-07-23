@@ -1,0 +1,224 @@
+---
+import db from '../../lib/db.js';
+
+const url = Astro.request.url ? new URL(Astro.request.url) : null;
+const q = url ? decodeURIComponent(url.searchParams.get('q')?.trim() ?? '') : '';
+
+let resultados = [];
+
+if (q.length >= 2) {
+  try {
+    const { rows } = await db.query(
+      `
+      SELECT 
+        e.id,
+        e.codigo_barras,
+        e.numero_adquisicion,
+        e.numero_ejemplar,
+        e.ubicacion_especifica,
+        l.titulo
+      FROM ejemplares e
+      JOIN libros l ON l.id = e.libro_id
+      WHERE e.codigo_barras ILIKE $1
+         OR e.numero_adquisicion ILIKE $1
+         OR l.titulo ILIKE $1
+      ORDER BY l.titulo, e.numero_ejemplar
+      LIMIT 25
+      `,
+      [`%${q}%`]
+    );
+
+    resultados = rows.map(r => ({
+      id: r.id,
+      codigo: r.codigo_barras ?? 'SN',
+      titulo: r.titulo ?? 'Sin título',
+      ubic: r.ubicacion_especifica ?? 'Sin ubicación',
+      numEjemplar: r.numero_ejemplar ?? '',
+      numAdq: r.numero_adquisicion ?? '',
+    }));
+  } catch (err) {
+    console.error(err);
+  }
+}
+---
+
+<style>
+/* --- Estilos similares a los que diste --- */
+body { font-family: "Segoe UI", Tahoma, sans-serif; background: #1a1a1a; color: #eee; margin: 20px; }
+header { border-bottom: 1px solid #444; margin-bottom: 18px; padding-bottom: 10px; }
+h1 { margin: 0 0 12px; font-size: 1.9rem; color: #4caf50; }
+form { display: flex; gap: 8px; max-width: 600px; }
+input[type=text] { flex: 1; padding: 8px 12px; border: 1px solid #444; border-radius: 4px; background: #222; color: #eee; }
+button { padding: 8px 15px; border: none; border-radius: 4px; background: #3498db; color: #fff; font-weight: 600; cursor: pointer; }
+button:hover { background: #2980b9; }
+table { width: 100%; border-collapse: collapse; margin: 16px 0; background: #222; }
+th, td { padding: 9px; border: 1px solid #444; text-align: left; }
+th { background: #333; }
+.btn-add { background: #2ecc71; }
+.btn-remove { background: #e74c3c; }
+.cart-btns { margin: 10px 0; }
+.cart-btns button { margin-right: 12px; }
+#printArea { display: none; }
+.grid { display: grid; grid-template-columns: repeat(4, 48mm); gap: 6mm; }
+.label { width: 48mm; height: 28mm; padding: 3mm; box-sizing: border-box; border: 1px dashed #ccc; display: flex; flex-direction: column; justify-content: space-between; font-size: 10pt; color: #000; background: #fff; }
+.label .tit { font-weight: 700; font-size: 10pt; text-align: center; }
+.label .mid { display: flex; justify-content: space-between; align-items: center; }
+.label small { font-size: 8pt; text-align: center; }
+@media print {
+  body { margin: 0; padding: 0; background: #fff; color: #000; }
+  header, main { display: none; }
+  #printArea { display: block; padding: 10mm; }
+}
+</style>
+
+<header>
+  <h1>Generador de Etiquetas</h1>
+  <form onsubmit="event.preventDefault(); buscar();">
+    <input
+      id="searchInput"
+      type="text"
+      minlength="2"
+      placeholder="Buscar ISBN / título / adquisición"
+      value={q}
+      required
+    />
+    <button type="submit">Buscar</button>
+  </form>
+</header>
+
+<main>
+  <section>
+    <h2>Resultados</h2>
+    {q && resultados.length === 0 && <p>No se encontraron resultados.</p>}
+    {resultados.length > 0 && (
+      <table>
+        <thead>
+          <tr>
+            <th>Código</th>
+            <th>Título</th>
+            <th>Ubicación</th>
+            <th>N° Adquisición</th>
+            <th>N° Ejemplar</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="resBody">
+          {resultados.map(r => (
+            <tr key={r.id}>
+              <td>{r.codigo}</td>
+              <td>{r.titulo}</td>
+              <td>{r.ubic}</td>
+              <td>{r.numAdq}</td>
+              <td>{r.numEjemplar}</td>
+              <td><button class="btn-add" data-json={JSON.stringify(r)}>Agregar</button></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )}
+  </section>
+
+  <section>
+    <h2>Carrito (<span id="cartCnt">0</span>)</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Código</th>
+          <th>Título</th>
+          <th>Ubicación</th>
+          <th>N° Adquisición</th>
+          <th>N° Ejemplar</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="cartBody"></tbody>
+    </table>
+    <div class="cart-btns">
+      <button id="printBtn" disabled>Imprimir etiquetas</button>
+      <button id="emptyBtn" class="btn-remove">Vaciar carrito</button>
+    </div>
+  </section>
+</main>
+
+<div id="printArea"><div class="grid" id="grid"></div></div>
+
+<script type="module" is:inline>
+  import JsBarcode from 'https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js';
+  import qrcode from 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js';
+
+  const cart = [];
+  const cartCnt = document.getElementById('cartCnt');
+  const cartBody = document.getElementById('cartBody');
+  const printBtn = document.getElementById('printBtn');
+  const emptyBtn = document.getElementById('emptyBtn');
+  const gridEl = document.getElementById('grid');
+
+  document.getElementById('resBody').addEventListener('click', e => {
+    if (!e.target.matches('.btn-add')) return;
+    const item = JSON.parse(e.target.dataset.json);
+    cart.push(item);
+    renderCart();
+  });
+
+  cartBody.addEventListener('click', e => {
+    if (!e.target.matches('.btn-remove')) return;
+    const idx = Number(e.target.dataset.idx);
+    cart.splice(idx, 1);
+    renderCart();
+  });
+
+  function renderCart() {
+    cartCnt.textContent = cart.length;
+    printBtn.disabled = cart.length === 0;
+    cartBody.innerHTML = '';
+    gridEl.innerHTML = '';
+
+    cart.forEach((it, i) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${it.codigo}</td>
+        <td>${it.titulo}</td>
+        <td>${it.ubic}</td>
+        <td>${it.numAdq || ''}</td>
+        <td>${it.numEjemplar || ''}</td>
+        <td><button class="btn-remove" data-idx="${i}">Quitar</button></td>
+      `;
+      cartBody.appendChild(tr);
+
+      const lab = document.createElement('div');
+      lab.className = 'label';
+      lab.innerHTML = `
+        <div class="tit">${it.titulo}</div>
+        <div class="mid">
+          <svg id="bc-${i}"></svg>
+          <div id="qr-${i}"></div>
+        </div>
+        <small>Código: ${it.codigo} | Ubic.: ${it.ubic}<br>Adquisición: ${it.numAdq} | Ejemplar: ${it.numEjemplar}</small>
+      `;
+      gridEl.appendChild(lab);
+
+      JsBarcode(`#bc-${i}`, it.codigo, { format: 'CODE128', height: 25, displayValue: false });
+      const qr = qrcode(0, 'L');
+      qr.addData(it.codigo);
+      qr.make();
+      document.getElementById(`qr-${i}`).innerHTML = qr.createSvgTag({ cellSize: 2, margin: 0 });
+    });
+  }
+
+  printBtn.addEventListener('click', () => window.print());
+  emptyBtn.addEventListener('click', () => {
+    cart.length = 0;
+    renderCart();
+  });
+
+  window.buscar = () => {
+    const v = document.getElementById('searchInput').value.trim();
+    if (v.length < 2) {
+      alert('Min 2 caracteres');
+      return;
+    }
+    window.location.search = '?q=' + encodeURIComponent(v);
+  };
+
+  renderCart();
+</script>

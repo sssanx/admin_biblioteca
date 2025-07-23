@@ -42,10 +42,8 @@
         </button>
       </form>
 
-      <!-- Contenedor de Resultados - Siempre visible pero inicialmente vacío -->
-      <div id="result-container" class="mt-6">
-        <!-- El contenido se insertará dinámicamente aquí -->
-      </div>
+      <!-- Contenedor de Resultados -->
+      <div id="result-container" class="mt-6"></div>
     </div>
   </div>
 
@@ -85,7 +83,6 @@
             throw new Error(data.error || 'Libro no encontrado');
           }
 
-          // Plantilla de resultados CON BOTONES
           resultContainer.innerHTML = `
             <div class="bg-gray-50 rounded-lg p-4 border border-gray-200">
               <div class="flex gap-4">
@@ -105,10 +102,9 @@
                 </div>
               </div>
               
-              <!-- SECCIÓN DE BOTONES FIJA -->
               <div class="mt-4 pt-4 border-t border-gray-200">
                 <label class="block text-sm font-medium text-gray-700 mb-2">Categoría</label>
-                <select class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                <select id="categoria-select" class="w-full px-3 py-2 border border-gray-300 rounded-md">
                   <option value="1">General</option>
                   <option value="2">Ficción</option>
                   <option value="3">Técnico</option>
@@ -126,35 +122,42 @@
             </div>
           `;
 
-          // Configurar eventos de los botones
+          // Botón Guardar
           document.getElementById('save-btn').addEventListener('click', async () => {
+            const categoriaId = parseInt(document.getElementById('categoria-select').value);
+
             try {
-              const response = await fetch('/api/agregar_lib', {
+              const saveResponse = await fetch('/api/agregar_lib', {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                  titulo: data.titulo,
-                  autor: data.autores?.join(', '),
-                  editorial: data.editorial,
-                  anio: data.anio,
-                  isbn: data.isbn,
-                  categoria_id: 1
+                  titulo: data.titulo || 'Sin título',
+                  autor: data.autores?.join(', ') || 'Desconocido',
+                  editorial: data.editorial || 'Desconocida',
+                  anio: data.anio || '0',
+                  isbn: data.isbn || '',
+                  categoria_id: categoriaId
                 })
               });
-              
-              if (response.ok) {
-                alert('Libro guardado correctamente');
+
+              if (saveResponse.ok) {
+                alert('✅ Libro guardado correctamente');
                 isbnInput.value = '';
                 resultContainer.innerHTML = '';
                 isbnInput.focus();
+              } else {
+                const errData = await saveResponse.json();
+                alert(`⚠️ Error al guardar: ${errData.message || 'Error desconocido'}`);
               }
             } catch (error) {
               console.error('Error:', error);
+              alert('⚠️ Ocurrió un error al guardar el libro');
             }
           });
 
+          // Botón Cancelar
           document.getElementById('cancel-btn').addEventListener('click', () => {
             resultContainer.innerHTML = '';
             isbnInput.focus();

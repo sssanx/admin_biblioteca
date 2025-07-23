@@ -1,0 +1,51 @@
+---
+import db from '@/lib/db';
+
+const donacionId = Astro.params.id;
+const itemId = Astro.params.itemId;
+
+const formData = await Astro.request.formData();
+const titulo = formData.get('titulo');
+const autor = formData.get('autor');
+const editorial = formData.get('editorial');
+const anio_publicacion = parseInt(formData.get('anio_publicacion') || '0');
+const isbn = formData.get('isbn');
+const cantidad = parseInt(formData.get('cantidad') || '1');
+const descripcion = formData.get('descripcion');
+const clasificacion = formData.get('clasificacion');
+const ubicacion = formData.get('ubicacion');
+
+await db.query(`
+  UPDATE items_donacion
+  SET 
+    titulo = $1,
+    autor = $2,
+    editorial = $3,
+    anio_publicacion = $4,
+    isbn = $5,
+    cantidad = $6,
+    descripcion = $7,
+    clasificacion = $8,
+    ubicacion = $9
+  WHERE id = $10 AND donacion_id = $11
+`, [
+  titulo,
+  autor,
+  editorial,
+  anio_publicacion,
+  isbn,
+  cantidad,
+  descripcion,
+  clasificacion,
+  ubicacion,
+  itemId,
+  donacionId
+]);
+
+return new Response(null, {
+  status: 302,
+  headers: {
+    Location: `/donaciones/${donacionId}`
+  }
+});
+---

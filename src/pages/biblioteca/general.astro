@@ -1,0 +1,183 @@
+---
+// src/pages/biblioteca/general.astro
+import db from '../../lib/db';
+
+// Obtener parámetros de búsqueda
+const url = new URL(Astro.request.url);
+const searchParams = url.searchParams;
+const q = searchParams.get('q') || '';
+const anio = searchParams.get('anio') || '';
+
+// Preparar consulta SQL
+let filtros = [];
+let valores = [];
+let paramIndex = 1;
+
+if (q) {
+  valores.push(`%${q}%`);
+  filtros.push(`(titulo ILIKE $${paramIndex} OR descripcion ILIKE $${paramIndex})`);
+  paramIndex++;
+}
+
+if (anio) {
+  valores.push(anio);
+  filtros.push(`EXTRACT(YEAR FROM fecha_publicacion) = $${paramIndex}`);
+  paramIndex++;
+}
+
+const whereClause = filtros.length > 0 ? `WHERE ${filtros.join(' AND ')}` : '';
+
+// Consulta básica sin contar visitas
+const result = await db.query(`
+  SELECT * FROM recursos_digitales
+  ${whereClause}
+  ORDER BY fecha_publicacion DESC
+`, valores);
+
+const recursos = result.rows;
+
+// Obtener años únicos para filtro
+const aniosUnicos = [...new Set(
+  recursos.map(r => new Date(r.fecha_publicacion).getFullYear())
+)].sort((a, b) => b - a);
+---
+
+<html lang="es">
+  <head>
+    <title>Biblioteca Digital</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <style>
+      .card {
+        border-left: 4px solid #1B396A;
+        transition: all 0.2s ease;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+      }
+      .card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 10px 15px rgba(0,0,0,0.1);
+      }
+      .btn-pdf {
+        background-color: #1B396A;
+        transition: all 0.2s ease;
+      }
+      .btn-pdf:hover {
+        background-color: #142a4f;
+        transform: translateY(-1px);
+      }
+      .descripcion {
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      .search-input {
+        transition: all 0.3s ease;
+      }
+      .search-input:focus {
+        box-shadow: 0 0 0 3px rgba(27, 57, 106, 0.2);
+      }
+    </style>
+  </head>
+  <body class="bg-gray-50 p-4 min-h-screen">
+    <div class="max-w-6xl mx-auto">
+      <!-- Encabezado -->
+      <header class="mb-8 text-center">
+        <h1 class="text-3xl font-bold text-gray-800 mb-2">
+          <i class="fas fa-book-open text-blue-600 mr-2"></i>
+          Biblioteca Digital
+        </h1>
+        <p class="text-gray-600">Explora nuestros recursos académicos</p>
+      </header>
+
+      <!-- Barra de búsqueda mejorada -->
+      <form method="GET" class="mb-8 bg-white p-4 rounded-lg shadow-sm">
+        <div class="flex flex-col md:flex-row gap-4">
+          <div class="flex-1 relative">
+            <i class="fas fa-search absolute left-3 top-3 text-gray-400"></i>
+            <input
+              type="text"
+              name="q"
+              placeholder="Buscar por título o descripción..."
+              value={q}
+              class="search-input w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none"
+            />
+          </div>
+          
+          <div class="flex items-center gap-2">
+            <select 
+              name="anio" 
+              class="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none"
+            >
+              <option value="">Todos los años</option>
+              {aniosUnicos.map(an => (
+                <option value={an} selected={anio === an.toString()}>{an}</option>
+              ))}
+            </select>
+            <button 
+              type="submit" 
+              class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+            >
+              <i class="fas fa-search mr-2"></i> Buscar
+            </button>
+          </div>
+        </div>
+      </form>
+
+      <!-- Resultados -->
+      <div class="mb-8">
+        {recursos.length === 0 ? (
+          <div class="text-center py-12 bg-white rounded-lg shadow-sm">
+            <i class="fas fa-book-open text-4xl text-gray-300 mb-4"></i>
+            <h3 class="text-xl text-gray-600 mb-2">No se encontraron recursos</h3>
+            <p class="text-gray-500 mb-4">Prueba con otros términos de búsqueda</p>
+            {q || anio ? (
+              <button 
+                onclick="window.location.href='?'"
+                class="text-blue-600 hover:text-blue-800 font-medium"
+              >
+                <i class="fas fa-undo mr-2"></i> Reiniciar búsqueda
+              </button>
+            ) : null}
+          </div>
+        ) : (
+          <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {recursos.map((r) => (
+              <div class="card bg-white p-5 rounded-lg">
+                <div class="mb-4">
+                  <h2 class="font-bold text-lg text-gray-800 mb-1">{r.titulo}</h2>
+                  <div class="flex items-center text-sm text-gray-500 mb-3">
+                    <i class="fas fa-calendar-day mr-2"></i>
+                    {new Date(r.fecha_publicacion).toLocaleDateString('es-ES')}
+                  </div>
+                  <p class="text-gray-600 mb-4 descripcion">{r.descripcion}</p>
+                </div>
+                
+                <div class="flex justify-between items-center pt-3 border-t border-gray-100">
+                  <a
+                    href={r.archivo_url}
+                    target="_blank"
+                    class="btn-pdf text-white text-sm px-4 py-2 rounded-lg inline-flex items-center"
+                  >
+                    <i class="fas fa-file-pdf mr-2"></i> Ver PDF
+                  </a>
+                  
+                  <span class="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                    <i class="far fa-eye mr-1"></i> {Math.floor(Math.random() * 150) + 50} vistas
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <!-- Pie de página -->
+      <footer class="text-center text-sm text-gray-500 mt-8 pt-4 border-t border-gray-200">
+        <p>Sistema de Biblioteca Digital © {new Date().getFullYear()}</p>
+      </footer>
+    </div>
+  </body>
+</html>

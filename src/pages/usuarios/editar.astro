@@ -1,92 +1,222 @@
 ---
-import '../../styles/tailwind.css';
+import AdminLayout from '../../layouts/AdminLayout.astro';
+
+// ────────── Obtener datos del usuario ──────────
+const urlParams = new URLSearchParams(Astro.url.search);
+const userId    = urlParams.get('id');
+
+let userData = {};
+if (userId) {
+  try {
+    const res = await fetch(`http://localhost:4321/api/usuarios/${userId}`);
+    if (res.ok) {
+      userData = await res.json();
+      if (userData.vigencia) {
+        userData.vigencia = userData.vigencia.split('T')[0]; // Solo YYYY-MM-DD
+      }
+    } else {
+      console.error(`Error al obtener usuario: ${res.status}`);
+    }
+  } catch (err) {
+    console.error('Error al obtener usuario:', err);
+  }
+}
 ---
 
-<html lang="es">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Editar Usuario</title>
-  </head>
-  <body class="bg-gradient-to-b from-[#f4f4f2] to-[#eae7dc] min-h-screen font-sans text-gray-800">
+<AdminLayout title="Editar Usuario">
+  <main class="bg-gradient-to-b from-gray-50 to-gray-100 min-h-screen text-gray-800 pt-24 pb-10 px-4">
+    <div class="max-w-4xl mx-auto">
+      <div class="bg-white rounded-2xl shadow-xl p-8 border border-gray-200 transition-smooth hover:shadow-2xl">
 
-    <!-- Encabezado -->
-    <header class="bg-[#1e3a5f] text-white py-6 px-8 shadow-md fixed w-full z-30">
-      <div class="max-w-7xl mx-auto">
-        <h1 class="text-4xl font-bold tracking-tight flex items-center gap-3">
-          ✏️ Editar Usuario
-        </h1>
-        <p class="text-sm mt-1 text-[#e0e0e0]">Modificar datos de un usuario existente</p>
-      </div>
-    </header>
-
-    <main class="flex justify-center items-center min-h-screen pt-32 px-4">
-      <div class="bg-white w-full max-w-2xl rounded-2xl shadow-2xl p-10 relative border border-gray-200 transition-all duration-300">
-
-        <!-- Encabezado del formulario -->
-        <div class="mb-8 flex items-center gap-4 border-b border-[#cbb26a] pb-4">
-          <span class="text-4xl text-[#1e3a5f]">📋</span>
-          <h2 class="text-3xl font-semibold text-[#1e3a5f]">Editar Usuario</h2>
+        <!-- Encabezado -->
+        <div class="mb-8 flex items-center gap-4 pb-4 border-b border-[#cbb26a]/30">
+          <div class="bg-[#1e3a5f]/10 p-3 rounded-full">
+            <i class="fas fa-user-cog text-[#1e3a5f] text-2xl"></i>
+          </div>
+          <h2 class="text-2xl font-semibold text-[#1e3a5f]">Editar Usuario</h2>
         </div>
 
         <!-- Formulario -->
-        <form id="editForm" action="/api/editar_usu" class="space-y-6">
+        <form id="editForm" class="space-y-6">
+          <!-- ID -->
           <div>
-            <label for="id" class="block text-sm font-medium text-gray-700 mb-1">ID del Usuario</label>
-            <input type="number" id="id" name="id" required
-              class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-[#cbb26a] focus:ring-2 focus:outline-none transition" />
+            <label class="label-astro">ID del Usuario</label>
+            <div class="input-icon">
+              <input type="number" id="id" name="id" readonly
+                     value={userData.id || userId}
+                     class="input-readonly"/>
+              <i class="fas fa-lock icon-left"></i>
+            </div>
           </div>
 
+          <!-- Nombre -->
           <div>
-            <label for="nombre" class="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
-            <input type="text" id="nombre" name="nombre" required
-              class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-[#cbb26a] focus:ring-2 focus:outline-none transition" />
+            <label class="label-astro">Nombre Completo</label>
+            <div class="input-icon">
+              <input id="nombre" name="nombre" required placeholder="Ej: Juan Pérez"
+                     value={userData.nombre || ''}
+                     class="input-edit"/>
+              <i class="fas fa-user icon-left"></i>
+            </div>
           </div>
 
+          <!-- Correo -->
           <div>
-            <label for="correo" class="block text-sm font-medium text-gray-700 mb-1">Correo</label>
-            <input type="email" id="correo" name="correo" required
-              class="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-[#cbb26a] focus:ring-2 focus:outline-none transition" />
+            <label class="label-astro">Correo Electrónico</label>
+            <div class="input-icon">
+              <input id="correo" name="correo" type="email" required placeholder="usuario@dominio.com"
+                     value={userData.correo || ''}
+                     class="input-edit"/>
+              <i class="fas fa-at icon-left"></i>
+            </div>
           </div>
 
+          <!-- Rol -->
+          <div>
+            <label class="label-astro">Rol</label>
+            <div class="input-icon">
+              <select id="rol" name="rol" required class="input-select">
+                <option value="" disabled selected>Selecciona un rol</option>
+                {['Estudiante','Profesor','Bibliotecario','Administrador'].map(r=>(
+                  <option value={r} selected={userData.rol===r}>{r}</option>
+                ))}
+              </select>
+              <i class="fas fa-user-shield icon-left"></i>
+            </div>
+          </div>
+
+          <!-- Carrera -->
+          <div>
+            <label class="label-astro">Carrera</label>
+            <div class="input-icon">
+              <select id="carrera_id" name="carrera_id" class="input-select">
+                <option value="" disabled selected>Selecciona una carrera</option>
+                <option value="1" selected={userData.carrera_id==1}>Ingeniería en materiales</option>
+                <option value="2" selected={userData.carrera_id==2}>Ingeniería Química</option>
+                <option value="3" selected={userData.carrera_id==3}>Ingeniería en logística</option>
+                <option value="4" selected={userData.carrera_id==4}>Ingeniería en electromecánica</option>
+                <option value="5" selected={userData.carrera_id==5}>Ingeniería en empresarial</option>
+              </select>
+              <i class="fas fa-graduation-cap icon-left"></i>
+            </div>
+          </div>
+
+          <!-- Cuatrimestre -->
+          <div>
+            <label class="label-astro">Cuatrimestre</label>
+            <div class="input-icon">
+              <select id="cuatrimestres" name="cuatrimestres" class="input-select">
+                <option value="" disabled selected>Selecciona un cuatrimestre</option>
+                {Array.from({length:10},(_,i)=>i+1).map(n=>(
+                  <option value={n} selected={userData.id_cuatrimestre==n}>{n}° Cuatrimestre</option>
+                ))}
+              </select>
+              <i class="fas fa-layer-group icon-left"></i>
+            </div>
+          </div>
+
+          <!-- Vigencia -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label class="label-astro">Fecha de vigencia</label>
+              <input type="date" id="vigencia" name="vigencia"
+                     value={userData.vigencia ?? ''}
+                     class="input-edit"/>
+            </div>
+            <div class="flex items-center mt-8 md:mt-9">
+              <input id="vigInd" type="checkbox" name="vigencia_indefinida"
+                     checked={userData.vigencia_indefinida ?? true}
+                     class="mr-2 h-4 w-4 text-[#cbb26a] border-gray-300 rounded focus:ring-[#cbb26a]"/>
+              <label for="vigInd" class="text-sm">Vigencia indefinida</label>
+            </div>
+          </div>
+
+          <!-- Matrícula -->
+          <div>
+            <label class="label-astro">Matrícula</label>
+            <div class="input-icon">
+              <input id="matricula" name="matricula" required placeholder="A01234567"
+                     value={userData.matricula || ''}
+                     class="input-edit"/>
+              <i class="fas fa-id-badge icon-left"></i>
+            </div>
+          </div>
+
+          <!-- Botón -->
           <div class="pt-4">
-            <button type="submit"
-              class="w-full bg-[#1e3a5f] hover:bg-[#142c4b] text-white font-semibold px-6 py-3 rounded-md shadow-md transition duration-200">
-              🔄 Actualizar Usuario
+            <button type="submit" class="btn-update">
+              <i class="fas fa-sync-alt group-hover:rotate-180 duration-500"></i>
+              <span>Actualizar Usuario</span>
             </button>
           </div>
         </form>
 
         <!-- Mensaje -->
-        <div id="mensaje" class="mt-4 text-center text-sm font-medium text-red-600"></div>
+        <div id="mensaje" class="mt-6 text-center text-sm font-medium flex items-center justify-center gap-2 hidden">
+          <i class="fas fa-info-circle"></i><span></span>
+        </div>
       </div>
-    </main>
+    </div>
+  </main>
 
-    <!-- Script -->
-    <script type="module">
-      document.getElementById('editForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
+  <!-- Script envío -->
+  <script is:inline>
+    document.addEventListener('DOMContentLoaded',()=>{
+      const form=document.getElementById('editForm');
+      const msg=document.getElementById('mensaje');
+      form.addEventListener('submit',async(e)=>{
+        e.preventDefault(); msg.classList.add('hidden');
 
-        const id = document.getElementById('id').value;
-        const nombre = document.getElementById('nombre').value;
-        const correo = document.getElementById('correo').value;
+        const formData={
+          id:          form.id.value,
+          nombre:      form.nombre.value,
+          correo:      form.correo.value,
+          rol:         form.rol.value,
+          carrera_id:  form.carrera_id.value,
+          cuatrimestres: form.cuatrimestres.value,
+          matricula:   form.matricula.value,
+          vigencia:    form.vigencia.value,
+          vigencia_indefinida: form.vigencia_indefinida.checked
+        };
 
-        try {
-          const res = await fetch('/api/editar_usu', {
-            method: 'PUT',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ id: parseInt(id), nombre, correo })
+        try{
+          const res=await fetch('/api/editar_usu',{
+            method:'PUT',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify(formData)
           });
-
-          const data = await res.json();
-          document.getElementById('mensaje').textContent = data.mensaje || data.error;
-        } catch (err) {
-          document.getElementById('mensaje').textContent = 'Error al enviar los datos';
+          const data=await res.json();
+          msg.classList.remove('hidden');
+          if(data.error){
+            msg.className='mt-6 text-center text-sm font-medium flex items-center gap-2 text-red-600';
+            msg.innerHTML=`<i class="fas fa-exclamation-circle"></i><span>${data.error}</span>`;
+          }else{
+            msg.className='mt-6 text-center text-sm font-medium flex items-center gap-2 text-green-600';
+            msg.innerHTML=`<i class="fas fa-check-circle"></i><span>${data.mensaje||'Usuario actualizado'}</span>`;
+            setTimeout(()=>window.location.href='/usuarios',1500);
+          }
+        }catch(err){
+          msg.classList.remove('hidden');
+          msg.className='mt-6 text-center text-sm font-medium flex items-center gap-2 text-red-600';
+          msg.innerHTML='<i class="fas fa-exclamation-circle"></i><span>Error de conexión</span>';
           console.error(err);
         }
       });
-    </script>
-  </body>
-</html>
+    });
+  </script>
+
+  <!-- Estilos utilitarios -->
+  <style is:global>
+    .transition-smooth{transition:all .3s cubic-bezier(.4,0,.2,1);}
+    .label-astro{display:flex;gap:.5rem;align-items:center;font-size:.875rem;font-weight:500;color:#374151;margin-bottom:.5rem}
+    .input-icon{position:relative}
+    .icon-left{position:absolute;left:.75rem;top:.9rem;color:#9ca3af}
+    .input-edit{width:100%;padding:.75rem .75rem .75rem 2.5rem;border:1px solid #d1d5db;border-radius:.5rem;box-shadow:0 1px 2px rgb(0 0 0 / 4%);outline:none}
+    .input-edit:focus{border-color:#cbb26a;box-shadow:0 0 0 3px rgba(203,178,106,.25)}
+    .input-readonly{width:100%;padding:.75rem 1rem;padding-left:2.5rem;border:1px solid #d1d5db;border-radius:.5rem;background:#f3f4f6;color:#6b7280}
+    .input-select{width:100%;padding:.75rem 2.5rem .75rem .75rem;border:1px solid #d1d5db;border-radius:.5rem;background:#fff}
+    .input-select:focus{border-color:#cbb26a;box-shadow:0 0 0 3px rgba(203,178,106,.25)}
+    .btn-update{width:100%;display:flex;justify-content:center;gap:.75rem;align-items:center;padding:1rem;border:none;border-radius:.75rem;font-weight:600;color:#fff;background:linear-gradient(to right,#1e3a5f,#2a4a75);box-shadow:0 2px 6px rgba(0,0,0,.15);transition:.3s}
+    .btn-update:hover{background:linear-gradient(to right,#142c4b,#1e3a5f)}
+  </style>
+</AdminLayout>

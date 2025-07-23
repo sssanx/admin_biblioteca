@@ -1,0 +1,934 @@
+---
+export const prerender = false;
+import AdminLayout from '../layouts/AdminLayout.astro';
+
+import db from '../lib/db';
+
+// Obtener usuarios con credenciales y estado calculado
+const { rows: usuarios } = await db.query(`
+  SELECT 
+    u.id, u.nombre, u.matricula, u.genero, u.email, u.foto_path,
+    c.id as credencial_id, c.codigo_barras, c.estado,
+    c.fecha_emision, c.fecha_expiracion,
+    carr.nombre as carrera,
+    CASE
+      WHEN c.id IS NULL THEN 'NO_EMITIDA'
+      WHEN c.fecha_expiracion < CURRENT_DATE THEN 'VENCIDA'
+      ELSE c.estado
+    END as estado_actual
+  FROM usuarios u
+  LEFT JOIN credenciales c ON u.id = c.usuario_id
+  LEFT JOIN carreras carr ON u.carrera_id = carr.id
+  ORDER BY u.nombre
+`);
+
+// Procesar formularios
+let mensaje = '';
+let tipoMensaje = 'info';
+let credencialGenerada = null;
+let usuarioSeleccionado = null;
+
+if (Astro.request.method === 'POST') {
+  const formData = await Astro.request.formData();
+  const accion = formData.get('accion');
+  const usuarioId = formData.get('usuario_id');
+  
+  try {
+    // Obtener ID de administrador
+    const { rows: [admin] } = await db.query(
+      "SELECT id FROM usuarios WHERE es_admin = true LIMIT 1"
+    );
+    const adminId = admin?.id || null;
+
+    await db.query('BEGIN'); // Iniciar transacción
+    
+    if (accion === 'generar') {
+      const { rows: [usuario] } = await db.query(`
+        SELECT * FROM usuarios WHERE id = $1
+      `, [usuarioId]);
+
+      if (!usuario) {
+        throw new Error('Usuario no encontrado');
+      }
+
+      // Procesar código de barras solo con números
+      const matriculaOriginal = usuario.matricula || 'SIN_MATRICULA';
+      let codigoBarras = matriculaOriginal.replace(/\D/g, '') || 'SIN_MATRICULA';
+
+      const { rows: [nuevaCredencial] } = await db.query(`
+        INSERT INTO credenciales 
+          (usuario_id, codigo_barras, fecha_emision, fecha_expiracion, estado)
+        VALUES ($1, $2, CURRENT_DATE, CURRENT_DATE + INTERVAL '2 years', 'ACTIVA')
+        RETURNING *
+      `, [usuarioId, codigoBarras]);
+
+      await db.query(`
+        INSERT INTO movimientos_credencial 
+          (credencial_id, tipo, descripcion, usuario_responsable)
+        VALUES ($1, 'EMISION', 'Credencial generada inicialmente', $2)
+      `, [nuevaCredencial.id, adminId]);
+
+      credencialGenerada = nuevaCredencial;
+      usuarioSeleccionado = usuario;
+      mensaje = '✓ Credencial generada exitosamente';
+      tipoMensaje = 'success';
+    }
+
+    if (accion === 'renovar') {
+      const credencialId = formData.get('credencial_id');
+      const { rows: [credencial] } = await db.query(`
+        SELECT * FROM credenciales WHERE id = $1
+      `, [credencialId]);
+
+      if (!credencial) {
+        throw new Error('Credencial no encontrada');
+      }
+
+      // Renovar fecha de expiración +2 años desde hoy
+      const { rows: [actualizada] } = await db.query(`
+        UPDATE credenciales
+        SET fecha_emision = CURRENT_DATE,
+            fecha_expiracion = CURRENT_DATE + INTERVAL '2 years',
+            estado = 'ACTIVA'
+        WHERE id = $1
+        RETURNING *
+      `, [credencialId]);
+
+      await db.query(`
+        INSERT INTO movimientos_credencial 
+          (credencial_id, tipo, descripcion, usuario_responsable)
+        VALUES ($1, 'RENOVACION', 'Credencial renovada', $2)
+      `, [credencialId, adminId]);
+
+      credencialGenerada = actualizada;
+
+      // Buscar usuario para mostrar
+      const { rows: [usuario] } = await db.query(`
+        SELECT * FROM usuarios WHERE id = $1
+      `, [credencial.usuario_id]);
+
+      usuarioSeleccionado = usuario;
+      mensaje = '✓ Credencial renovada exitosamente';
+      tipoMensaje = 'success';
+    }
+    if (accion === 'baja') {
+      try {
+        const credencialId = formData.get('credencial_id');
+        const { rows: [credencial] } = await db.query(
+          `SELECT * FROM credenciales WHERE id = $1`, 
+          [credencialId]
+        );
+
+        if (!credencial) {
+          throw new Error('Credencial no encontrada');
+        }
+
+        await db.query('BEGIN');
+
+        // Actualizar estado
+        await db.query(
+          `UPDATE credenciales SET estado = 'INACTIVA' WHERE id = $1`,
+          [credencialId]
+        );
+
+        // Intentar con BAJA primero, si falla usar CAMBIO_ESTADO
+        try {
+          await db.query(
+            `INSERT INTO movimientos_credencial 
+             (credencial_id, tipo, descripcion, usuario_responsable)
+             VALUES ($1, 'BAJA', 'Credencial dada de baja', $2)`,
+            [credencialId, adminId]
+          );
+        } catch (insertError) {
+          if (insertError.code === '23514') { // Código de error de violación CHECK
+            await db.query(
+              `INSERT INTO movimientos_credencial 
+               (credencial_id, tipo, descripcion, usuario_responsable)
+               VALUES ($1, 'CAMBIO_ESTADO', 'Credencial dada de baja', $2)`,
+              [credencialId, adminId]
+            );
+          } else {
+            throw insertError;
+          }
+        }
+
+        await db.query('COMMIT');
+        mensaje = '✓ Credencial dada de baja exitosamente';
+        tipoMensaje = 'success';
+
+      } catch (error) {
+        await db.query('ROLLBACK');
+        console.error('Error en baja de credencial:', error);
+        mensaje = `⚠ Error: ${error.detail || error.message}`;
+        tipoMensaje = 'error';
+      }
+    }
+    await db.query('COMMIT');
+
+  } catch (error) {
+    await db.query('ROLLBACK');
+    console.error('Error completo:', error);
+    mensaje = `⚠ Error: ${error.detail || error.message}`;
+    tipoMensaje = 'error';
+  }
+}
+---
+
+<AdminLayout title="Credenciales - ITST Biblioteca">
+  <main class="bg-gray-50">
+    <header class="bg-blue-900 text-white py-3 px-4 shadow-md">
+      <div class="container mx-auto flex items-center">
+        <div class="h-12 w-12 bg-blue-800 text-white flex items-center justify-center rounded-full mr-3">
+          <i class="fas fa-university text-xl"></i>
+        </div>
+        <div>
+          <h1 class="text-xl font-bold">Instituto Tecnológico Superior de Tlaxco</h1>
+          <p class="text-sm">Sistema de Gestión de Credenciales - Biblioteca</p>
+        </div>
+      </div>
+    </header>
+
+    <main class="container mx-auto p-4 max-w-7xl">
+      {mensaje && (
+        <div class={`mb-4 p-3 rounded-md text-white ${tipoMensaje === 'success' ? 'bg-green-600' : tipoMensaje === 'error' ? 'bg-red-600' : 'bg-blue-600'}`}>
+          {mensaje}
+        </div>
+      )}
+
+      <section class="bg-white rounded-lg shadow-md p-4 mb-6 fade-in flex justify-between items-center">
+        <h2 class="text-2xl font-bold text-blue-900">
+          <i class="fas fa-id-card mr-2"></i> Credenciales de Biblioteca
+        </h2>
+        <div class="flex space-x-2">
+          <a href="/usuarios" class="px-3 py-1 bg-green-600 text-white rounded-md text-sm hover:bg-green-700 transition-colors flex items-center">
+            <i class="fas fa-user-plus mr-1"></i> Nuevo Usuario
+          </a>
+          <a href="/imprimir-credenciales" class="px-3 py-1 bg-purple-600 text-white rounded-md text-sm hover:bg-purple-700 transition-colors flex items-center">
+            <i class="fas fa-print mr-1"></i> Ver hoja de impresión
+          </a>
+        </div>
+      </section>
+
+      <section class="bg-white rounded-xl shadow-lg overflow-hidden mb-8 fade-in">
+        <div class="overflow-x-auto">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-blue-900 text-white">
+              <tr>
+                <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Usuario</th>
+                <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Matrícula</th>
+                <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Carrera</th>
+                <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Credencial</th>
+                <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Estado</th>
+                <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Expiración</th>
+                <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider">Acciones</th>
+              </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+              {usuarios.map((usuario) => (
+                <tr key={usuario.id} class="hover:bg-gray-50">
+                  <td class="px-4 py-3 whitespace-nowrap">
+                    <div class="flex items-center">
+                      <div class={`flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center ${
+                        usuario.genero === 'F' ? 'bg-pink-100 text-pink-600' : 'bg-blue-100 text-blue-600'
+                      }`}>
+                        <i class={`fas ${usuario.genero === 'F' ? 'fa-venus' : 'fa-mars'}`}></i>
+                      </div>
+                      <div class="ml-3">
+                        <div class="text-sm font-medium text-gray-900">{usuario.nombre}</div>
+                        <div class="text-xs text-gray-500">{usuario.email}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-800 font-mono">
+                    {usuario.matricula}
+                  </td>
+                  <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-800">
+                    {usuario.carrera || 'N/A'}
+                  </td>
+                  <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-800 font-mono">
+                    {usuario.credencial_id ? 'EMITIDA' : '--'}
+                  </td>
+                  <td class="px-4 py-3 whitespace-nowrap">
+                    <span class={`px-2 py-1 text-xs font-semibold rounded-full ${
+                      usuario.estado_actual === 'ACTIVA' ? 'bg-green-100 text-green-800' :
+                      usuario.estado_actual === 'VENCIDA' ? 'bg-red-100 text-red-800' :
+                      usuario.estado_actual === 'INACTIVA' ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-gray-100 text-gray-800'
+                    }`}>
+                      {usuario.estado_actual === 'NO_EMITIDA' ? 'NO EMITIDA' : usuario.estado_actual}
+                    </span>
+                  </td>
+                  <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-800">
+                    {usuario.fecha_expiracion ? new Date(usuario.fecha_expiracion).toLocaleDateString('es-MX') : '--'}
+                  </td>
+                  <td class="px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
+                    <div class="flex justify-end space-x-1">
+                      {!usuario.credencial_id ? (
+                        <form method="POST" class="inline-block">
+                          <input type="hidden" name="usuario_id" value={usuario.id} />
+                          <input type="hidden" name="accion" value="generar" />
+                          <button type="submit" class="px-2 py-1 bg-blue-600 text-white rounded-md text-xs hover:bg-blue-700 transition-colors flex items-center">
+                            <i class="fas fa-id-card mr-1"></i> Generar
+                          </button>
+                        </form>
+                      ) : (
+                        <>
+                          <form method="POST" class="inline-block">
+                            <input type="hidden" name="credencial_id" value={usuario.credencial_id} />
+                            <input type="hidden" name="accion" value="renovar" />
+                            <button type="submit" class="px-2 py-1 bg-green-600 text-white rounded-md text-xs hover:bg-green-700 transition-colors flex items-center">
+                              <i class="fas fa-sync-alt mr-1"></i> Renovar
+                            </button>
+                          </form>
+
+                          <button
+                            type="button"
+                            data-usuario={JSON.stringify(usuario)}
+                            data-credencial={JSON.stringify({
+                              id: usuario.credencial_id,
+                              codigo_barras: usuario.codigo_barras,
+                              fecha_emision: usuario.fecha_emision,
+                              fecha_expiracion: usuario.fecha_expiracion,
+                              estado: usuario.estado_actual
+                            })}
+                            onclick="handleAgregarImpresion(this)"
+                            class="px-2 py-1 bg-yellow-600 text-white rounded-md text-xs hover:bg-yellow-700 transition-colors flex items-center"
+                          >
+                            <i class="fas fa-plus mr-1"></i> Agregar a impresión
+                          </button>
+
+                          <form method="POST" class="inline-block">
+                            <input type="hidden" name="credencial_id" value={usuario.credencial_id} />
+                            <input type="hidden" name="accion" value="baja" />
+                            <button 
+                              type="submit" 
+                              class="px-2 py-1 bg-red-600 text-white rounded-md text-xs hover:bg-red-700 transition-colors flex items-center"
+                              onclick="return confirm('¿Estás seguro de dar de baja esta credencial?')"
+                            >
+                              <i class="fas fa-ban mr-1"></i> Baja
+                            </button>
+                          </form>
+                        </>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* Modal para impresión individual */}
+      <div id="modalCredencial" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full">
+          <div class="flex justify-between items-center border-b p-4">
+            <h3 class="text-xl font-bold text-blue-900">Vista previa de Credencial</h3>
+            <button id="cerrarModal" class="text-gray-500 hover:text-gray-700">
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+          
+          <div class="p-6">
+            {/* Cara frontal - Diseño ITST */}
+            <div class="credential-itst-front">
+              <div class="credential-header">
+                <div class="institution-logo">
+                  <div class="logo-circle">
+                    <span>ITST</span>
+                  </div>
+                </div>
+                <div class="institution-info">
+                  <div class="institution-name">INSTITUTO TECNOLÓGICO SUPERIOR DE TLAXCO</div>
+                  <div class="credential-title">CREDENCIAL DE BIBLIOTECA</div>
+                </div>
+              </div>
+              
+              <div class="credential-body">
+                <div class="photo-container">
+                  {usuarioSeleccionado?.foto_path ? (
+                    <img src={usuarioSeleccionado.foto_path} alt="Foto" class="user-photo" />
+                  ) : (
+                    <div class="photo-placeholder">
+                      <i class="fas fa-user"></i>
+                    </div>
+                  )}
+                </div>
+                
+                <div class="user-info">
+                  <div class="user-name" id="nombreFront">{usuarioSeleccionado?.nombre || ''}</div>
+                  <div class="user-details">
+                    <div class="detail-row">
+                      <span class="detail-label">Matrícula:</span>
+                      <span class="detail-value" id="matriculaFront">{usuarioSeleccionado?.matricula || ''}</span>
+                    </div>
+                    <div class="detail-row">
+                      <span class="detail-label">Carrera:</span>
+                      <span class="detail-value" id="carreraFront">{usuarioSeleccionado?.carrera || ''}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <div class="credential-footer">
+                <div class="expiration-date">
+                  Válida hasta: <span id="fechaExpiracionFront">
+                    {credencialGenerada?.fecha_expiracion ? 
+                      new Date(credencialGenerada.fecha_expiracion).toLocaleDateString('es-MX') : ''}
+                  </span>
+                </div>
+                <div class="barcode" id="codigoBarrasFront">
+                  {credencialGenerada?.codigo_barras || ''}
+                </div>
+              </div>
+            </div>
+            
+            {/* Cara trasera - Diseño ITST */}
+            <div class="credential-itst-back">
+              <div class="back-header">
+                <div class="institution-name">INSTITUTO TECNOLÓGICO SUPERIOR DE TLAXCO</div>
+                <div class="credential-title">CREDENCIAL DE BIBLIOTECA</div>
+              </div>
+              
+              <div class="barcode-container">
+                <div class="barcode-large" id="codigoBarrasBack">
+                  {credencialGenerada?.codigo_barras || ''}
+                </div>
+                <div class="barcode-label">CÓDIGO DE IDENTIFICACIÓN</div>
+              </div>
+              
+              <div class="dates-container">
+                <div class="date-row">
+                  <span class="date-label">Fecha de emisión:</span>
+                  <span class="date-value" id="fechaEmisionBack">
+                    {credencialGenerada?.fecha_emision ? 
+                      new Date(credencialGenerada.fecha_emision).toLocaleDateString('es-MX') : ''}
+                  </span>
+                </div>
+                <div class="date-row">
+                  <span class="date-label">Fecha de expiración:</span>
+                  <span class="date-value" id="fechaExpiracionBack">
+                    {credencialGenerada?.fecha_expiracion ? 
+                      new Date(credencialGenerada.fecha_expiracion).toLocaleDateString('es-MX') : ''}
+                  </span>
+                </div>
+              </div>
+              
+              <div class="terms-container">
+                <div class="term-item">• Esta credencial es personal e intransferible</div>
+                <div class="term-item">• Debe presentarse para hacer uso de la biblioteca</div>
+                <div class="term-item">• En caso de pérdida, reportar inmediatamente</div>
+              </div>
+              
+              <div class="signature-container">
+                <div class="signature-line"></div>
+                <div class="signature-label">Firma del titular</div>
+              </div>
+            </div>
+            
+            <div class="mt-6 flex justify-center">
+              <button id="btnImprimirModal" class="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center">
+                <i class="fas fa-print mr-2"></i> Imprimir Credencial
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </main>
+<!-- En tu archivo de credenciales (la primera parte que compartiste) -->
+<style>
+  /* Estilos mejorados para la credencial ITST */
+  .credential-itst-front {
+    width: 320px;
+    height: 200px;
+    background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%);
+    border-radius: 12px;
+    color: white;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    margin: 0 auto 20px;
+    position: relative;
+    overflow: hidden;
+  }
+  
+  /* Patrón de seguridad sutil */
+  .credential-itst-front::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: 
+      radial-gradient(circle at 20% 30%, rgba(255,255,255,0.1) 1px, transparent 1px),
+      radial-gradient(circle at 80% 70%, rgba(255,255,255,0.1) 1px, transparent 1px);
+    background-size: 20px 20px;
+    z-index: 1;
+  }
+  
+  .credential-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 10px;
+    border-bottom: 2px solid rgba(255, 255, 255, 0.3);
+    padding-bottom: 8px;
+    position: relative;
+    z-index: 2;
+  }
+  
+  .institution-logo {
+    margin-right: 10px;
+    position: relative;
+  }
+  
+  .logo-circle {
+    width: 50px;
+    height: 50px;
+    background-color: #f59e0b;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 16px;
+    color: #1e40af;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .logo-circle::before {
+    content: "";
+    position: absolute;
+    top: -10px;
+    left: -10px;
+    right: -10px;
+    bottom: -10px;
+    background: radial-gradient(circle, rgba(255,255,255,0.4) 0%, transparent 70%);
+  }
+  
+  .institution-info {
+    flex-grow: 1;
+  }
+  
+  .institution-name {
+    font-size: 10px;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  
+  .credential-title {
+    font-size: 14px;
+    font-weight: bold;
+    margin-top: 2px;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+  }
+  
+  .credential-body {
+    display: flex;
+    flex-grow: 1;
+    margin: 10px 0;
+    position: relative;
+    z-index: 2;
+  }
+  
+  .photo-container {
+    width: 80px;
+    height: 100px;
+    margin-right: 15px;
+    background-color: white;
+    border-radius: 6px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    border: 1px solid rgba(255,255,255,0.5);
+  }
+  
+  .user-photo {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  
+  .photo-placeholder {
+    color: #9ca3af;
+    font-size: 30px;
+  }
+  
+  .user-info {
+    flex-grow: 1;
+  }
+  
+  .user-name {
+    font-size: 16px;
+    font-weight: bold;
+    margin-bottom: 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    padding-bottom: 5px;
+    position: relative;
+  }
+  
+  .user-name::after {
+    content: "";
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    width: 50px;
+    height: 2px;
+    background: #f59e0b;
+  }
+  
+  .user-details {
+    font-size: 12px;
+  }
+  
+  .detail-row {
+    margin-bottom: 5px;
+    display: flex;
+  }
+  
+  .detail-label {
+    font-weight: bold;
+    margin-right: 5px;
+    min-width: 60px;
+  }
+  
+  .detail-value {
+    font-weight: normal;
+  }
+  
+  .credential-footer {
+    margin-top: auto;
+    text-align: center;
+    position: relative;
+    z-index: 2;
+  }
+  
+  .expiration-date {
+    font-size: 10px;
+    margin-bottom: 5px;
+    opacity: 0.8;
+  }
+  
+  .barcode {
+    font-family: 'Libre Barcode 128', cursive;
+    font-size: 24px;
+    letter-spacing: 2px;
+    background: rgba(0,0,0,0.1);
+    padding: 2px 10px;
+    border-radius: 4px;
+  }
+  
+  /* Estilo para la parte trasera */
+  .credential-itst-back {
+    width: 320px;
+    height: 200px;
+    background: white;
+    border-radius: 12px;
+    color: #1e3a8a;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    margin: 0 auto;
+    border: 2px solid #1e40af;
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .credential-itst-back::before {
+    content: "ITST";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotate(-30deg);
+    font-size: 80px;
+    font-weight: bold;
+    color: rgba(30, 64, 175, 0.1);
+    z-index: 1;
+  }
+  
+  .back-header {
+    text-align: center;
+    margin-bottom: 10px;
+    border-bottom: 2px solid #1e40af;
+    padding-bottom: 8px;
+    position: relative;
+    z-index: 2;
+  }
+  
+  .back-header .institution-name {
+    font-size: 10px;
+    font-weight: bold;
+    text-transform: uppercase;
+    color: #1e3a8a;
+  }
+  
+  .back-header .credential-title {
+    font-size: 14px;
+    font-weight: bold;
+    color: #1e3a8a;
+  }
+  
+  .barcode-container {
+    text-align: center;
+    margin: 10px 0;
+    padding: 10px;
+    background-color: #f3f4f6;
+    border-radius: 6px;
+    position: relative;
+    z-index: 2;
+  }
+  
+  .barcode-large {
+    font-family: 'Libre Barcode 128', cursive;
+    font-size: 36px;
+    letter-spacing: 3px;
+    margin-bottom: 5px;
+  }
+  
+  .barcode-label {
+    font-size: 10px;
+    font-weight: bold;
+    text-transform: uppercase;
+  }
+  
+  .dates-container {
+    margin: 10px 0;
+    font-size: 12px;
+    position: relative;
+    z-index: 2;
+  }
+  
+  .date-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 5px;
+  }
+  
+  .date-label {
+    font-weight: bold;
+  }
+  
+  .terms-container {
+    margin: 10px 0;
+    font-size: 10px;
+    position: relative;
+    z-index: 2;
+  }
+  
+  .term-item {
+    margin-bottom: 5px;
+    position: relative;
+    padding-left: 12px;
+  }
+  
+  .term-item::before {
+    content: "•";
+    position: absolute;
+    left: 0;
+    color: #1e40af;
+    font-weight: bold;
+  }
+  
+  .signature-container {
+    margin-top: auto;
+    text-align: center;
+    position: relative;
+    z-index: 2;
+  }
+  
+  .signature-line {
+    width: 150px;
+    height: 1px;
+    background-color: #1e40af;
+    margin: 0 auto 5px;
+    position: relative;
+  }
+  
+  .signature-line::after {
+    content: "";
+    position: absolute;
+    top: -3px;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background-color: #1e40af;
+    opacity: 0.3;
+  }
+  
+  .signature-label {
+    font-size: 10px;
+    font-style: italic;
+  }
+  
+  /* Elemento de seguridad holográfico */
+  .holographic-sticker {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    width: 40px;
+    height: 40px;
+    background: linear-gradient(45deg, 
+      rgba(255,0,0,0.3), 
+      rgba(0,255,0,0.3), 
+      rgba(0,0,255,0.3));
+    border-radius: 50%;
+    z-index: 2;
+    box-shadow: 0 0 10px rgba(255,255,255,0.5);
+  }
+  
+  .holographic-sticker::after {
+    content: "ITST";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 8px;
+    font-weight: bold;
+    color: white;
+    text-shadow: 0 0 2px black;
+  }
+</style>
+
+<!-- En el modal, agregar el elemento holográfico -->
+<div class="credential-itst-front">
+  <div class="holographic-sticker"></div>
+  <!-- resto del contenido... -->
+</div>
+
+  <script is:inline>
+    document.addEventListener('DOMContentLoaded', () => {
+      const modal = document.getElementById('modalCredencial');
+      const cerrarModalBtn = document.getElementById('cerrarModal');
+      const btnImprimirModal = document.getElementById('btnImprimirModal');
+      
+      function abrirModal(usuario, credencial) {
+        // Cara frontal
+        document.getElementById('nombreFront').textContent = usuario.nombre || '';
+        document.getElementById('matriculaFront').textContent = usuario.matricula || '';
+        document.getElementById('carreraFront').textContent = usuario.carrera || '';
+        document.getElementById('fechaExpiracionFront').textContent = 
+          credencial.fecha_expiracion ? new Date(credencial.fecha_expiracion).toLocaleDateString('es-MX') : '';
+        document.getElementById('codigoBarrasFront').textContent = credencial.codigo_barras || '';
+        
+        // Cara trasera
+        document.getElementById('codigoBarrasBack').textContent = credencial.codigo_barras || '';
+        document.getElementById('fechaEmisionBack').textContent = 
+          credencial.fecha_emision ? new Date(credencial.fecha_emision).toLocaleDateString('es-MX') : '';
+        document.getElementById('fechaExpiracionBack').textContent = 
+          credencial.fecha_expiracion ? new Date(credencial.fecha_expiracion).toLocaleDateString('es-MX') : '';
+        
+        modal.classList.remove('hidden');
+        modal.classList.add('flex', 'fade-in');
+      }
+
+      function cerrarModal() {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex', 'fade-in');
+      }
+
+      cerrarModalBtn.addEventListener('click', cerrarModal);
+
+      btnImprimirModal.addEventListener('click', () => {
+        // Asegurar que el modal está visible antes de imprimir
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        
+        // Usar requestAnimationFrame para asegurar que el DOM se actualizó
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            window.print();
+          });
+        });
+      });
+
+      // Escuchar evento personalizado para mostrar modal con datos
+      window.addEventListener('mostrar-credencial', (e) => {
+        const { usuario, credencial } = e.detail;
+        abrirModal(usuario, credencial);
+      });
+
+      // Manejar datos del servidor para mostrar modal automáticamente
+      const credencialData = document.getElementById('credencial-data');
+      const usuarioData = document.getElementById('usuario-data');
+      
+      if (credencialData && usuarioData) {
+        try {
+          const credencialGenerada = JSON.parse(credencialData.textContent);
+          const usuarioSeleccionado = JSON.parse(usuarioData.textContent);
+          
+          if (credencialGenerada && usuarioSeleccionado) {
+            abrirModal(usuarioSeleccionado, credencialGenerada);
+          }
+        } catch (error) {
+          console.error('Error al parsear datos:', error);
+        }
+      }
+    });
+
+    // Función para manejar el agregado a impresión
+    function handleAgregarImpresion(button) {
+      try {
+        const usuario = JSON.parse(button.dataset.usuario);
+        const credencial = JSON.parse(button.dataset.credencial);
+        
+        if (typeof(Storage) === "undefined") {
+          alert('Tu navegador no soporta la función de agregar a impresión');
+          return;
+        }
+
+        let lista = JSON.parse(localStorage.getItem('credencialesAImprimir') || '[]');
+        
+        // Verificar si ya existe
+        const existe = lista.some(item => item.credencial.id === credencial.id);
+        
+        if (!existe) {
+          // Agregar a la lista
+          lista.push({ usuario, credencial });
+          localStorage.setItem('credencialesAImprimir', JSON.stringify(lista));
+
+          // Feedback visual
+          const originalHTML = button.innerHTML;
+          button.innerHTML = '<i class="fas fa-check mr-1"></i> Agregada';
+          button.classList.remove('bg-yellow-600');
+          button.classList.add('bg-green-600');
+          
+          setTimeout(() => {
+            button.innerHTML = originalHTML;
+            button.classList.remove('bg-green-600');
+            button.classList.add('bg-yellow-600');
+          }, 2000);
+        } else {
+          alert('Esta credencial ya está en la lista de impresión');
+        }
+      } catch (error) {
+        console.error('Error en handleAgregarImpresion:', error);
+        alert('Ocurrió un error al agregar a impresión: ' + error.message);
+      }
+    }
+
+    // Asignar función al ámbito global
+    window.handleAgregarImpresion = handleAgregarImpresion;
+  </script>
+
+  {/* Elementos ocultos para pasar datos del servidor al cliente */}
+  {credencialGenerada && (
+    <script id="credencial-data" type="application/json">
+      {JSON.stringify(credencialGenerada)}
+    </script>
+  )}
+  {usuarioSeleccionado && (
+    <script id="usuario-data" type="application/json">
+      {JSON.stringify(usuarioSeleccionado)}
+    </script>
+  )}
+</AdminLayout>

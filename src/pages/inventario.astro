@@ -1,0 +1,211 @@
+---
+export const prerender = false;
+
+import AdminLayout from '../layouts/AdminLayout.astro';
+import db from '../lib/db.js';
+
+// Consulta SQL para obtener libros por semestre incluyendo donaciones
+// Consulta SQL para obtener libros por semestre incluyendo donaciones y estado real desde ejemplares
+const result = await db.query(`
+  SELECT 
+    CONCAT(EXTRACT(YEAR FROM l.fecha_ingreso), '-', 
+           CASE 
+             WHEN EXTRACT(MONTH FROM l.fecha_ingreso) <= 6 THEN '1'
+             ELSE '2'
+           END) AS semestre,
+    COUNT(*) AS total_libros,
+    COUNT(*) FILTER (WHERE l.origen = 'donacion') AS total_donaciones,
+    COUNT(*) FILTER (WHERE e.estado = 'disponible') AS disponibles,
+    COUNT(*) FILTER (WHERE e.estado = 'prestado') AS prestados,
+    COUNT(*) FILTER (WHERE e.estado = 'perdido') AS perdidos
+  FROM libros l
+  JOIN ejemplares e ON e.libro_id = l.id
+  GROUP BY semestre
+  ORDER BY semestre DESC;
+`);
+
+
+// Procesar datos
+const datos = result.rows.map(row => {
+  const porcentajeDonacion = row.total_libros > 0 ? Math.round((row.total_donaciones / row.total_libros) * 100) : 0;
+  const porcentajeDisponible = row.total_libros > 0 ? Math.round((row.disponibles / row.total_libros) * 100) : 0;
+  
+  return { 
+    ...row, 
+    porcentajeDonacion,
+    porcentajeDisponible
+  };
+});
+
+// Calcular totales generales
+const totalGeneral = datos.reduce((acc, curr) => {
+  return {
+    totalLibros: acc.totalLibros + curr.total_libros,
+    totalDonaciones: acc.totalDonaciones + curr.total_donaciones,
+    totalDisponibles: acc.totalDisponibles + curr.disponibles,
+    totalPrestados: acc.totalPrestados + curr.prestados,
+    totalPerdidos: acc.totalPerdidos + curr.perdidos
+  };
+}, { totalLibros: 0, totalDonaciones: 0, totalDisponibles: 0, totalPrestados: 0, totalPerdidos: 0 });
+---
+
+<AdminLayout title="Inventario General">
+  <!-- Tabla con scroll lateral y vertical fijo -->
+<div class="w-full overflow-x-auto bg-white rounded-xl shadow-md">
+  <div class="min-w-[900px] max-h-[600px] overflow-y-auto">
+
+  <main class="min-h-screen bg-gray-50 px-6 py-10">
+    <div class="max-w-6xl mx-auto">
+      {/* Resumen General */}
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <div class="bg-white p-4 rounded-lg shadow border">
+          <h3 class="text-gray-500 text-sm font-medium">Total Libros</h3>
+          <p class="text-2xl font-bold text-[#002E5D]">{totalGeneral.totalLibros}</p>
+        </div>
+        <div class="bg-white p-4 rounded-lg shadow border">
+          <h3 class="text-gray-500 text-sm font-medium">Donaciones</h3>
+          <p class="text-2xl font-bold text-emerald-600">{totalGeneral.totalDonaciones}</p>
+          <p class="text-sm text-gray-500">
+            {totalGeneral.totalLibros > 0 ? Math.round((totalGeneral.totalDonaciones / totalGeneral.totalLibros) * 100) : 0}% del total
+          </p>
+        </div>
+        <div class="bg-white p-4 rounded-lg shadow border">
+          <h3 class="text-gray-500 text-sm font-medium">Disponibles</h3>
+          <p class="text-2xl font-bold text-blue-600">{totalGeneral.totalDisponibles}</p>
+        </div>
+        <div class="bg-white p-4 rounded-lg shadow border">
+          <h3 class="text-gray-500 text-sm font-medium">Prestados/Perdidos</h3>
+          <p class="text-2xl font-bold text-amber-600">{totalGeneral.totalPrestados}</p>
+        </div>
+      </div>
+
+      {/* Tabla de datos */}
+      <div class="bg-white p-6 rounded-xl shadow border">
+        <div class="flex items-center justify-between mb-6">
+          <div>
+            <h1 class="text-2xl font-bold text-[#002E5D]">📚 Inventario por Semestre</h1>
+            <p class="text-gray-600">Desglose semestral de libros ingresados y su estado.</p>
+          </div>
+          <div class="flex gap-2">
+            <button id="exportExcel" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-md shadow text-sm font-semibold flex items-center gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Exportar Excel
+            </button>
+          </div>
+        </div>
+
+        {datos.length > 0 ? (
+          <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200 border">
+              <thead class="bg-[#002E5D]">
+                <tr>
+                  <th class="px-6 py-3 text-left text-xs font-semibold text-white uppercase">Semestre</th>
+                  <th class="px-6 py-3 text-left text-xs font-semibold text-white uppercase">Total Libros</th>
+                  <th class="px-6 py-3 text-left text-xs font-semibold text-white uppercase">Donaciones</th>
+                  <th class="px-6 py-3 text-left text-xs font-semibold text-white uppercase">% Donación</th>
+                  <th class="px-6 py-3 text-left text-xs font-semibold text-white uppercase">Disponibles</th>
+                  <th class="px-6 py-3 text-left text-xs font-semibold text-white uppercase">% Disponible</th>
+                  <th class="px-6 py-3 text-left text-xs font-semibold text-white uppercase">Prestados</th>
+                  <th class="px-6 py-3 text-left text-xs font-semibold text-white uppercase">Perdidos</th>
+                </tr>
+              </thead>
+              <tbody class="bg-white divide-y divide-gray-100" id="tabla-datos">
+                {datos.map((row, index) => (
+                  <tr class={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                    <td class="px-6 py-4 font-medium text-[#002E5D] whitespace-nowrap">{row.semestre}</td>
+                    <td class="px-6 py-4 whitespace-nowrap">{row.total_libros}</td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                      <span class="inline-block px-2 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
+                        {row.total_donaciones}
+                      </span>
+                    </td>
+                    <td class={`px-6 py-4 text-sm font-semibold rounded-lg whitespace-nowrap ${
+                      row.porcentajeDonacion > 50
+                        ? 'bg-green-100 text-green-800'
+                        : row.porcentajeDonacion >= 20
+                        ? 'bg-yellow-100 text-yellow-800'
+                        : 'bg-red-100 text-red-800'
+                    }`}>
+                      {row.porcentajeDonacion}%
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">{row.disponibles}</td>
+                    <td class={`px-6 py-4 text-sm font-semibold rounded-lg whitespace-nowrap ${
+                      row.porcentajeDisponible > 70
+                        ? 'bg-green-100 text-green-800'
+                        : row.porcentajeDisponible >= 50
+                        ? 'bg-yellow-100 text-yellow-800'
+                        : 'bg-red-100 text-red-800'
+                    }`}>
+                      {row.porcentajeDisponible}%
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-amber-600">{row.prestados}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-red-600">{row.perdidos}</td>
+                  </tr>
+                ))}
+              </tbody>
+              {/* Pie de tabla con totales */}
+              <tfoot class="bg-gray-50">
+                <tr>
+                  <td class="px-6 py-4 font-bold text-[#002E5D]">TOTAL GENERAL</td>
+                  <td class="px-6 py-4 font-bold">{totalGeneral.totalLibros}</td>
+                  <td class="px-6 py-4 font-bold text-emerald-600">{totalGeneral.totalDonaciones}</td>
+                  <td class="px-6 py-4 font-bold">
+                    {totalGeneral.totalLibros > 0 ? Math.round((totalGeneral.totalDonaciones / totalGeneral.totalLibros) * 100) : 0}%
+                  </td>
+                  <td class="px-6 py-4 font-bold text-blue-600">{totalGeneral.totalDisponibles}</td>
+                  <td class="px-6 py-4 font-bold">
+                    {totalGeneral.totalLibros > 0 ? Math.round((totalGeneral.totalDisponibles / totalGeneral.totalLibros) * 100) : 0}%
+                  </td>
+                  <td class="px-6 py-4 font-bold text-amber-600">{totalGeneral.totalPrestados}</td>
+                  <td class="px-6 py-4 font-bold text-red-600">{totalGeneral.totalPerdidos}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        ) : (
+          <div class="text-center py-12 text-gray-500">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+            </svg>
+            <p class="mt-2 text-lg font-medium">No hay registros disponibles</p>
+          </div>
+        )}
+      </div>
+    </div>
+    </div> <!-- Cierre de scroll vertical interno -->
+  </div> <!-- Cierre de scroll lateral -->
+
+    <script is:inline>
+      document.getElementById('exportExcel').addEventListener('click', () => {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+        script.onload = () => {
+          const rows = Array.from(document.querySelectorAll('#tabla-datos tr'));
+          const data = rows.map(row => {
+            const cells = row.querySelectorAll('td');
+            return {
+              Semestre: cells[0].innerText,
+              "Total Libros": cells[1].innerText,
+              Donaciones: cells[2].innerText,
+              "% Donación": cells[3].innerText,
+              Disponibles: cells[4].innerText,
+              "% Disponible": cells[5].innerText,
+              Prestados: cells[6].innerText,
+              Perdidos: cells[7].innerText,
+            };
+          });
+
+          const wb = XLSX.utils.book_new();
+          const ws = XLSX.utils.json_to_sheet(data);
+          XLSX.utils.book_append_sheet(wb, ws, "Inventario");
+
+          const fecha = new Date().toISOString().split('T')[0];
+          XLSX.writeFile(wb, `inventario_libros_${fecha}.xlsx`);
+        };
+        document.head.appendChild(script);
+      });
+    </script>
+  </main>
+</AdminLayout>

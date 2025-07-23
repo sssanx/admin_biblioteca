@@ -1,0 +1,493 @@
+---
+import db from '../../lib/db';
+import AdminLayout from '../../layouts/AdminLayout.astro';
+
+// 1. Obtener estados permitidos desde la base de datos
+let estadosPermitidos;
+try {
+  const estadosQuery = await db.query(`
+    SELECT unnest(enum_range(NULL::estado_donacion)) AS estado
+  `);
+  estadosPermitidos = estadosQuery.rows.map(row => row.estado);
+} catch (e) {
+  // Fallback en caso de que no exista el tipo enum
+  estadosPermitidos = ['Ingresado', 'Recibido', 'Evaluación', 'Aceptado', 'Rechazado', 'Procesado'];
+}
+
+// 2. Obtener lista de donantes
+let donantes = (await db.query('SELECT id, nombre FROM donantes ORDER BY nombre')).rows;
+let error = '', success = false;
+
+// 3. Obtener ID del administrador
+const adminRes = await db.query(`SELECT id FROM usuarios WHERE correo = $1`, ['admin@biblioteca.com']);
+const adminId = adminRes.rows[0]?.id;
+
+// 4. Procesar el formulario POST
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  const files = form.getAll('comprobantes');
+  const fotos = form.getAll('foto_material');
+  const items = JSON.parse(form.get('items') || '[]');
+
+  let donante_id = form.get('donante_id');
+  const nuevo_donante = form.get('nuevo_donante')?.trim();
+  const tipo_material = form.get('tipo_material');
+  const estado = form.get('estado');
+  const observaciones = form.get('observaciones') || '';
+
+  try {
+    await db.query('BEGIN');
+
+    // 5. Crear nuevo donante si es necesario
+    if (!donante_id && nuevo_donante) {
+      const res = await db.query(`
+        INSERT INTO donantes (nombre) 
+        VALUES ($1) 
+        RETURNING id
+      `, [nuevo_donante]);
+      donante_id = res.rows[0].id;
+    }
+
+    // 6. Validar estado
+    if (!estadosPermitidos.includes(estado)) {
+      throw new Error(`Estado de donación no válido. Valores permitidos: ${estadosPermitidos.join(', ')}`);
+    }
+
+    // 7. Insertar donación principal
+    const donacionRes = await db.query(`
+      INSERT INTO donaciones (
+        donante_id, 
+        tipo_material, 
+        estado, 
+        observaciones, 
+        usuario_registro
+      )
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING id
+    `, [donante_id, tipo_material, estado, observaciones, adminId]);
+
+    const donacionId = donacionRes.rows[0].id;
+
+    // 8. Procesar cada ítem de la donación
+    for (let item of items) {
+      if (item.titulo) {
+        const libroRes = await db.query(`
+          INSERT INTO libros (
+            titulo, autor, editorial, anio_publicacion, isbn, 
+            origen, donacion_id, disponible, fecha_registro, 
+            fecha_ingreso, valor_estimado
+          )
+          VALUES ($1, $2, $3, $4, $5, 'donacion', $6, true, CURRENT_DATE, CURRENT_DATE, $7)
+          RETURNING id
+        `, [
+          item.titulo?.trim(),
+          item.autor?.trim(),
+          item.editorial?.trim(),
+          parseInt(item.anio_publicacion) || null,
+          item.isbn || `ADQ-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${Math.floor(Math.random()*9999).toString().padStart(4,'0')}`,
+          donacionId,
+          parseFloat(item.valor) || null
+        ]);
+
+        const libroId = libroRes.rows[0].id;
+
+        // 9. Procesar foto del material si existe
+        const foto = fotos[items.indexOf(item)];
+        if (foto && foto.name && foto.size > 0) {
+          const bytes = await foto.arrayBuffer();
+          await db.query(`
+            INSERT INTO imagenes_material (
+              libro_id, nombre_archivo, contenido, tipo_mime
+            )
+            VALUES ($1, $2, $3, $4)
+          `, [
+            libroId,
+            foto.name,
+            Buffer.from(bytes),
+            foto.type
+          ]);
+        }
+
+        // 10. Registrar ítem de donación
+        await db.query(`
+          INSERT INTO items_donacion (
+            donacion_id, libro_id, titulo, autor, 
+            editorial, anio_publicacion, isbn, cantidad, procesado
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, 1, true)
+        `, [
+          donacionId,
+          libroRes.rows[0].id,
+          item.titulo?.trim(),
+          item.autor?.trim(),
+          item.editorial?.trim(),
+          parseInt(item.anio_publicacion) || null,
+          item.isbn || null
+        ]);
+
+        // 11. Crear ejemplares
+        await db.query(`
+          INSERT INTO ejemplares (libro_id, estado, fecha_registro)
+          VALUES ($1, 'disponible', CURRENT_DATE)
+        `, [libroRes.rows[0].id]);
+      }
+    }
+
+    // 12. Procesar comprobantes adjuntos
+    for (let file of files) {
+      if (file && file.name && file.size > 0) {
+        await db.query(`
+          INSERT INTO comprobantes (
+            donacion_id, nombre_archivo
+          )
+          VALUES ($1, $2)
+        `, [
+          donacionId,
+          file.name
+        ]);
+      }
+    }
+
+    await db.query('COMMIT');
+    success = true;
+  } catch (e) {
+    await db.query('ROLLBACK');
+    error = e.message;
+    console.error('Error al registrar donación:', e);
+  }
+}
+---
+
+
+<script>
+  // Funciones JavaScript para el manejo del formulario
+  function toggleCamposLibro() {
+    const tipo = document.querySelector('select[name="tipo_material"]').value;
+    const campos = document.getElementById('campos-libro');
+    campos.style.display = (tipo === 'Libro' || tipo === 'Revista') ? 'block' : 'none';
+    
+    const avisoValor = document.getElementById('aviso-valor');
+    avisoValor.style.display = tipo === 'Libro' ? 'block' : 'none';
+  }
+
+  function toggleDonante() {
+    const selector = document.querySelector('select[name="donante_id"]');
+    const nuevo = document.getElementById('campo-nuevo-donante');
+    nuevo.style.display = selector.value === '' ? 'block' : 'none';
+  }
+
+  function agregarItem() {
+    const contenedor = document.getElementById('items-container');
+    const nuevoItem = document.querySelector('.item-donacion').cloneNode(true);
+    const itemCount = document.querySelectorAll('.item-donacion').length;
+    
+    nuevoItem.querySelectorAll('input').forEach(input => {
+      if (input.type !== 'hidden') input.value = '';
+      if (input.type === 'file') {
+        input.value = '';
+        const previewId = `vista-previa-${itemCount}`;
+        nuevoItem.querySelector(`#${previewId}`).innerHTML = '';
+      }
+    });
+    
+    const newPreviewId = `vista-previa-${itemCount}`;
+    nuevoItem.querySelector('[id^="vista-previa-"]').id = newPreviewId;
+    nuevoItem.querySelector('[name="foto_material"]').setAttribute('onchange', `mostrarVistaPrevia(this, '${newPreviewId}')`);
+    
+    contenedor.appendChild(nuevoItem);
+  }
+
+  function mostrarVistaPrevia(input, contenedorId) {
+    if (input.files && input.files[0]) {
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        document.getElementById(contenedorId).innerHTML = `
+          <img src="${e.target.result}" class="h-24 w-auto object-cover rounded mt-2">
+        `;
+      }
+      reader.readAsDataURL(input.files[0]);
+    }
+  }
+
+  function validarDonacion() {
+    let valido = true;
+    const items = [];
+    
+    document.querySelectorAll('.item-donacion').forEach((item, index) => {
+      const titulo = item.querySelector('[name="titulo"]').value;
+      const valor = parseFloat(item.querySelector('[name="valor"]').value) || 0;
+      const foto = item.querySelector('[name="foto_material"]').files[0];
+      
+      if (!titulo) {
+        alert(`El material #${index + 1} no tiene título. Todos los materiales deben tener al menos un título.`);
+        valido = false;
+      }
+      
+      if (valor > 500 && !foto) {
+        alert(`El material "${titulo}" tiene un valor superior a $500. Por favor, adjunte una fotografía.`);
+        valido = false;
+      }
+      
+      items.push({
+        titulo: titulo,
+        autor: item.querySelector('[name="autor"]').value,
+        editorial: item.querySelector('[name="editorial"]').value,
+        anio_publicacion: item.querySelector('[name="anio_publicacion"]').value,
+        isbn: item.querySelector('[name="isbn"]').value,
+        valor: valor
+      });
+    });
+    
+    if (valido) {
+      document.getElementById('items-json').value = JSON.stringify(items);
+      return true;
+    }
+    return false;
+  }
+
+  function prepararEnvio() {
+    return validarDonacion();
+  }
+
+  window.addEventListener('DOMContentLoaded', () => {
+    toggleCamposLibro();
+    toggleDonante();
+    document.querySelector('select[name="tipo_material"]').addEventListener('change', toggleCamposLibro);
+    document.querySelector('select[name="donante_id"]').addEventListener('change', toggleDonante);
+    
+    const form = document.querySelector('form');
+    form.setAttribute('enctype', 'multipart/form-data');
+    form.insertAdjacentHTML('beforeend', '<input type="hidden" id="items-json" name="items">');
+    form.onsubmit = prepararEnvio;
+  });
+</script>
+
+<AdminLayout title="Nueva Donación">
+  <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div class="flex items-center justify-between mb-8">
+      <h1 class="text-2xl font-bold text-gray-900 flex items-center">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-indigo-600 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+        </svg>
+        Registrar Nueva Donación
+      </h1>
+      <a href="/donaciones" class="text-indigo-600 hover:text-indigo-800 flex items-center">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+        </svg>
+        Ver donaciones
+      </a>
+    </div>
+
+    {error && (
+      <div class="mb-6 p-4 bg-red-50 border-l-4 border-red-500 rounded">
+        <div class="flex items-center">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-red-500 mr-2" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+          </svg>
+          <span class="text-red-700 font-medium">{error}</span>
+        </div>
+      </div>
+    )}
+
+    {success && (
+      <div class="mb-6 p-4 bg-green-50 border-l-4 border-green-500 rounded">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-green-500 mr-2" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+            </svg>
+            <span class="text-green-700 font-medium">¡Donación registrada exitosamente!</span>
+          </div>
+          <a href="/donaciones" class="text-green-600 hover:text-green-800 underline flex items-center">
+            Ver lista
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+            </svg>
+          </a>
+        </div>
+      </div>
+    )}
+
+    <div class="bg-white shadow rounded-lg overflow-hidden">
+      <div class="p-6 border-b border-gray-200"> 
+        <h2 class="text-lg font-medium text-gray-900 flex items-center">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-indigo-500 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+          </svg>
+          Información de la Donación
+        </h2>
+      </div>
+
+      <form method="POST" class="p-6 space-y-6" enctype="multipart/form-data">
+        <div class="space-y-6">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">
+              <span class="flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-500 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+                Donante
+              </span>
+            </label>
+            <select name="donante_id" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md border">
+              <option value="">-- Nuevo donante --</option>
+              {donantes.map(d => <option value={d.id}>{d.nombre}</option>)}
+            </select>
+          </div>
+
+          <div id="campo-nuevo-donante" style="display:none;" class="pl-4 border-l-4 border-indigo-200">
+            <label class="block text-sm font-medium text-gray-700 mb-1">
+              <span class="flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-500 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+                Nombre del nuevo donante
+              </span>
+            </label>
+            <input type="text" name="nuevo_donante" class="mt-1 focus:ring-indigo-500 focus:border-indigo-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2" />
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">
+                <span class="flex items-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-500 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                  </svg>
+                  Tipo de material
+                </span>
+              </label>
+              <select name="tipo_material" required class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md border">
+                <option>Libro</option>
+                <option>Revista</option>
+                <option>Multimedia</option>
+                <option>Equipo</option>
+                <option>Otro</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">
+                <span class="flex items-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-500 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Estado
+                </span>
+              </label>
+              <select name="estado" required class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md border">
+                {estadosPermitidos.map(estado => (
+                  <option value={estado}>{estado}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div id="aviso-valor" style="display: none;" class="bg-yellow-50 border-l-4 border-yellow-400 p-4">
+            <div class="flex">
+              <div class="flex-shrink-0">
+                <svg class="h-5 w-5 text-yellow-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                </svg>
+              </div>
+              <div class="ml-3">
+                <p class="text-sm text-yellow-700">
+                  Para materiales con valor superior a $500, es requerido adjuntar una fotografía como comprobante.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div id="campos-libro" style="display:none;" class="space-y-6 pt-6 border-t border-gray-200">
+            <div class="space-y-4">
+              <h3 class="text-md font-medium text-gray-900 flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-indigo-500 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                </svg>
+                Información del Material
+              </h3>
+              
+              <div id="items-container">
+                <div class="item-donacion bg-gray-50 p-4 rounded-lg space-y-4">
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label class="block text-sm font-medium text-gray-700 mb-1">Título*</label>
+                      <input type="text" name="titulo" required class="mt-1 focus:ring-indigo-500 focus:border-indigo-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2" />
+                    </div>
+
+                    <div>
+                      <label class="block text-sm font-medium text-gray-700 mb-1">Autor</label>
+                      <input type="text" name="autor" class="mt-1 focus:ring-indigo-500 focus:border-indigo-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2" />
+                    </div>
+
+                    <div>
+                      <label class="block text-sm font-medium text-gray-700 mb-1">Editorial</label>
+                      <input type="text" name="editorial" class="mt-1 focus:ring-indigo-500 focus:border-indigo-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2" />
+                    </div>
+
+                    <div>
+                      <label class="block text-sm font-medium text-gray-700 mb-1">Año de publicación</label>
+                      <input type="number" name="anio_publicacion" class="mt-1 focus:ring-indigo-500 focus:border-indigo-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2" />
+                    </div>
+
+                    <div>
+                      <label class="block text-sm font-medium text-gray-700 mb-1">Valor estimado</label>
+                      <input type="number" name="valor" step="0.01" class="mt-1 focus:ring-indigo-500 focus:border-indigo-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2" />
+                      <p class="mt-1 text-xs text-gray-500">Para libros donados con valor superior a $500</p>
+                    </div>
+
+                    <div class="md:col-span-2">
+                      <label class="block text-sm font-medium text-gray-700 mb-1">ISBN / Código</label>
+                      <input type="text" name="isbn" class="mt-1 focus:ring-indigo-500 focus:border-indigo-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2" />
+                      <p class="mt-1 text-xs text-gray-500">Dejar vacío para generar automáticamente</p>
+                    </div>
+
+                    
+
+              <button type="button" onclick="agregarItem()" class="mt-2 text-indigo-600 hover:text-indigo-800 flex items-center text-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+                Agregar otro material
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">
+              <span class="flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-500 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+                </svg>
+                Observaciones
+              </span>
+            </label>
+            <textarea name="observaciones" rows="3" class="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md border p-2"></textarea>
+          </div>
+<!--<div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">
+              <span class="flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-500 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                Comprobantes (opcional)
+              </span>
+            </label>
+            <input type="file" name="comprobantes" multiple class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100" />
+          </div>--->
+          
+        </div>
+
+        <div class="flex justify-end pt-6 border-t border-gray-200">
+          <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+            </svg>
+            Registrar Donación
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</AdminLayout>

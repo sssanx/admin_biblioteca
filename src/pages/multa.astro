@@ -1,0 +1,179 @@
+---
+import AdminLayout from '../layouts/AdminLayout.astro';
+import db from '../lib/db.js';
+import XLSX from 'xlsx';
+
+const url = new URL(Astro.request.url);
+const exportar = url.searchParams.get('exportar');
+
+if (exportar === 'excel') {
+  const result = await db.query(`
+    SELECT m.*, l.titulo, u.nombre, u.matricula
+    FROM multas m
+    JOIN libros l ON m.libro_id = l.id
+    JOIN usuarios u ON m.usuario_id = u.id
+    ORDER BY m.fecha_multa DESC
+  `);
+
+  const multasExcel = result.rows.map(m => ({
+    ID: m.id,
+    Libro: m.titulo,
+    Usuario: m.nombre,
+    Matricula: m.matricula,
+    Monto: Number(m.monto).toFixed(2),
+    Estado: m.estado,
+    'Fecha Creación': new Date(m.fecha_multa).toISOString().split('T')[0],
+    'Fecha Pago': m.fecha_pago ? new Date(m.fecha_pago).toISOString().split('T')[0] : '',
+    'Días Retraso': m.dias_retraso ?? 0,
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(multasExcel);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Multas');
+
+  const buffer = XLSX.write(wb, { bookType: 'xlsx', type: 'buffer' });
+
+  return new Response(buffer, {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': 'attachment; filename="multas.xlsx"',
+    },
+  });
+}
+
+// Si no es exportar, sigue con la carga normal (como ya tienes)
+const result = await db.query(`
+  SELECT m.*, l.titulo, u.nombre, u.matricula
+  FROM multas m
+  JOIN libros l ON m.libro_id = l.id
+  JOIN usuarios u ON m.usuario_id = u.id
+  ORDER BY m.fecha_multa DESC
+`);
+
+const multas = result.rows.map(m => {
+  const fechaCreacion = new Date(m.fecha_multa);
+  const fechaPago = m.fecha_pago ? new Date(m.fecha_pago) : null;
+  return {
+    ...m,
+    monto: Number(m.monto),
+    fecha_creacion: fechaCreacion,
+    fecha_pago: fechaPago,
+  };
+});
+---
+
+
+<AdminLayout title="Gestión de Multas - ITST">
+  <div class="container mx-auto px-4 py-8">
+    <header class="mb-10 text-center">
+      <div class="inline-flex items-center justify-center bg-gradient-to-r from-blue-900 to-blue-700 p-5 rounded-full shadow-xl mb-4">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      </div>
+      <h1 class="text-4xl font-light text-blue-900 mb-2">Gestión de <span class="font-semibold">Multas</span></h1>
+      <p class="text-lg text-blue-600">Instituto Tecnológico Superior de Tlaxco</p>
+    </header>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+      <div class="bg-white p-6 rounded-xl shadow-sm border border-blue-100">
+        <div class="text-blue-400 mb-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+          </svg>
+        </div>
+        <h3 class="text-2xl font-light text-blue-900 mb-1">{multas.length}</h3>
+        <p class="text-sm text-blue-500">Multas registradas</p>
+      </div>
+
+      <div class="bg-white p-6 rounded-xl shadow-sm border border-blue-100">
+        <div class="text-yellow-500 mb-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </div>
+        <h3 class="text-2xl font-light text-blue-900 mb-1">
+          {(multas.reduce((sum, m) => sum + (m.estado === 'pagada' ? 0 : m.monto), 0)).toFixed(2)}
+        </h3>
+        <p class="text-sm text-blue-500">Total pendiente</p>
+      </div>
+
+      <div class="bg-white p-6 rounded-xl shadow-sm border border-blue-100">
+        <div class="text-green-500 mb-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </div>
+        <h3 class="text-2xl font-light text-blue-900 mb-1">{multas.filter(m => m.estado === 'pagada').length}</h3>
+        <p class="text-sm text-blue-500">Multas pagadas</p>
+      </div>
+    </div>
+
+    <div class="flex flex-col sm:flex-row justify-between items-center mb-8 gap-4">
+      <div class="w-full sm:w-auto">
+        <form method="POST" action="/api/vaciar_multas" onsubmit="return confirm('¿Seguro que quieres eliminar todas las multas? Esta acción no se puede deshacer.')">
+          <button type="submit" class="text-red-600 hover:underline text-sm font-medium">Vaciar TODO</button>
+        </form>
+      </div>
+
+      <a href="?exportar=excel" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 transition-all duration-150 shadow-sm">
+        Exportar Excel
+      </a>
+    </div>
+
+    <div class="overflow-x-auto rounded-lg border border-blue-100 shadow-md">
+      <table class="w-full border-collapse table-auto text-sm">
+        <thead class="bg-gradient-to-r from-blue-800 to-blue-700 text-white font-semibold">
+          <tr>
+            <th class="p-3 text-left">ID</th>
+            <th class="p-3 text-left">Libro</th>
+            <th class="p-3 text-left">Usuario</th>
+            <th class="p-3 text-left">Monto</th>
+            <th class="p-3 text-left">Estado</th>
+            <th class="p-3 text-left">Fecha Creación</th>
+            <th class="p-3 text-left">Fecha Pago / Límite</th>
+            <th class="p-3 text-left">Días Retraso</th>
+            <th class="p-3 text-left">Acción</th>
+          </tr>
+        </thead>
+        <tbody class="bg-white divide-y divide-blue-100">
+          {multas.map(m => (
+            <tr key={m.id} class="hover:bg-blue-50">
+              <td class="px-4 py-3 text-sm text-blue-900 font-medium">{m.id}</td>
+              <td class="px-4 py-3 text-sm text-blue-900">{m.titulo}</td>
+              <td class="px-4 py-3 text-sm text-blue-900">{m.nombre} ({m.matricula})</td>
+              <td class="px-4 py-3 text-sm text-blue-900">${m.monto.toFixed(2)}</td>
+              <td class={`px-4 py-3 text-sm font-semibold ${m.estado === 'pagada' ? 'text-green-600' : 'text-red-600'}`}>
+                {m.estado}
+              </td>
+              <td class="px-4 py-3 text-sm text-blue-900">{m.fecha_creacion.toISOString().split("T")[0]}</td>
+              <td class="px-4 py-3 text-sm text-blue-900">
+                {m.estado === 'pagada'
+                  ? m.fecha_pago.toISOString().split("T")[0]
+                  : new Date(m.fecha_creacion.getTime() + 15*24*60*60*1000).toISOString().split("T")[0]}
+              </td>
+              <td class="px-4 py-3 text-sm text-blue-900 text-center">{m.dias_retraso ?? '-'}</td>
+              <td class="px-4 py-3 text-sm">
+                {m.estado !== 'pagada' ? (
+                  <form method="POST" action="/api/multas/pagar" class="inline">
+                    <input type="hidden" name="id" value={m.id} />
+                    <button
+                      type="submit"
+                      class="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm"
+                      title="Marcar como pagada"
+                    >
+                      Pagar
+                    </button>
+                  </form>
+                ) : (
+                  <span class="text-green-600 font-semibold">Pagada</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</AdminLayout>

@@ -1,0 +1,93 @@
+---
+// src/pages/prestamos/[id].astro
+
+import db from '../../lib/db.js';
+import AdminLayout from '../../layouts/AdminLayout.astro';
+
+const { id } = Astro.params;
+
+const { rows: prestamos } = await db.query(`
+  SELECT p.id,
+         l.titulo,
+         u.nombre,
+         ca.nombre AS carrera,
+         c.nombre AS cuatrimestre,
+         p.fecha_prestamo,
+         p.fecha_devolucion,
+         p.fecha_devolucion_esperada,
+         CASE
+           WHEN p.fecha_devolucion IS NOT NULL THEN 'Devuelto'
+           WHEN p.fecha_devolucion_esperada < NOW() THEN 'Vencido'
+           ELSE 'En préstamo'
+         END AS estado
+  FROM prestamos p
+  JOIN libros l ON l.id = p.libro_id
+  JOIN usuarios u ON u.id = p.usuario_id
+  LEFT JOIN carreras ca ON u.carrera_id = ca.id
+  LEFT JOIN cuatrimestre c ON u.id_cuatrimestre = c.id
+  WHERE p.id = $1
+`, [id]);
+
+const prestamo = prestamos[0];
+---
+
+<AdminLayout title={`Detalle Préstamo #${id}`}>
+  <div class="container mx-auto px-4 py-8">
+    {prestamo ? (
+      <>
+        <h1 class="text-3xl font-bold mb-6">Detalle del Préstamo</h1>
+        <div class="bg-white p-6 rounded-xl shadow-md max-w-3xl mx-auto">
+          <dl class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6 text-gray-700">
+            <div>
+              <dt class="font-semibold">Libro:</dt>
+              <dd>{prestamo.titulo}</dd>
+            </div>
+            <div>
+              <dt class="font-semibold">Usuario:</dt>
+              <dd>{prestamo.nombre}</dd>
+            </div>
+            <div>
+              <dt class="font-semibold">Carrera:</dt>
+              <dd>{prestamo.carrera ?? '-'}</dd>
+            </div>
+            <div>
+              <dt class="font-semibold">Cuatrimestre:</dt>
+              <dd>{prestamo.cuatrimestre ?? '-'}</dd>
+            </div>
+            <div>
+              <dt class="font-semibold">Fecha Préstamo:</dt>
+              <dd>{new Date(prestamo.fecha_prestamo).toLocaleDateString('es-ES')}</dd>
+            </div>
+            <div>
+              <dt class="font-semibold">Fecha Límite Devolución:</dt>
+              <dd>{new Date(prestamo.fecha_devolucion_esperada).toLocaleDateString('es-ES')}</dd>
+            </div>
+            <div>
+              <dt class="font-semibold">Fecha Devolución:</dt>
+              <dd>{prestamo.fecha_devolucion ? new Date(prestamo.fecha_devolucion).toLocaleDateString('es-ES') : 'Pendiente'}</dd>
+            </div>
+            <div>
+              <dt class="font-semibold">Estado:</dt>
+              <dd>
+                {prestamo.estado === 'Devuelto' ? (
+                  <span class="px-3 py-1 rounded-full bg-green-100 text-green-800">{prestamo.estado}</span>
+                ) : prestamo.estado === 'Vencido' ? (
+                  <span class="px-3 py-1 rounded-full bg-red-100 text-red-800">{prestamo.estado}</span>
+                ) : (
+                  <span class="px-3 py-1 rounded-full bg-yellow-100 text-yellow-800">{prestamo.estado}</span>
+                )}
+              </dd>
+            </div>
+          </dl>
+          <div class="mt-6">
+            <a href="/libros/prestamos" class="inline-block bg-gray-200 hover:bg-gray-300 px-4 py-2 rounded-lg shadow">
+              ← Volver a lista de préstamos
+            </a>
+          </div>
+        </div>
+      </>
+    ) : (
+      <p class="text-center text-red-600 text-lg">Préstamo con ID {id} no encontrado.</p>
+    )}
+  </div>
+</AdminLayout>

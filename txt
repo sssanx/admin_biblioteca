@@ -1,0 +1,36 @@
+🔹 Si el usuario selecciona "LIBRO":
+titulo → Título del libro
+
+autor → Autor del libro
+
+editorial → Editorial
+
+isbn → ISBN
+
+anio_publicacion → Año
+
+descripcion → (Opcional) resumen
+
+tipo = 'libro'
+
+🔹 Si el usuario selecciona "EQUIPO":
+titulo → Nombre del equipo (Ej. "Proyector Epson")
+
+autor → Marca (Ej. Epson)
+
+editorial → Modelo (puede ser reutilizado para esto)
+
+descripcion → Descripción técnica
+
+tipo = 'equipo'
+
+🔹 Si el usuario selecciona "OTRO":
+titulo → Nombre del objeto
+
+descripcion → Detalle libre
+
+Otros campos pueden quedar vacíos
+
+tipo = 'otro'
+
+re_jGJvgDnv_M3G9U8c7oFciUifR9Apc3JjN

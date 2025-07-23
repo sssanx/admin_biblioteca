@@ -1,0 +1,195 @@
+---
+// Componente: src/components/Donaciones.astro
+import { query } from '../lib/client';
+
+// Obtener datos
+const donaciones = await query(`
+  SELECT d.id, d.fecha, d.tipo_material, d.estado, d.observaciones,
+         dn.nombre as donante_nombre, dn.tipo as donante_tipo
+  FROM donaciones d
+  JOIN donantes dn ON d.donante_id = dn.id
+  ORDER BY d.fecha DESC LIMIT 50
+`);
+
+const donantes = await query(`SELECT id, nombre, tipo FROM donantes ORDER BY nombre`);
+
+const stats = await query(`
+  SELECT 
+    COUNT(*) as total,
+    SUM(CASE WHEN estado = 'Aceptado' THEN 1 ELSE 0 END) as aceptados,
+    SUM(CASE WHEN estado = 'Recibido' THEN 1 ELSE 0 END) as recibidos,
+    SUM(CASE WHEN estado = 'Rechazado' THEN 1 ELSE 0 END) as rechazados
+  FROM donaciones
+`);
+---
+
+<div class="container mx-auto p-4">
+  <!-- Pasar datos al cliente -->
+  <script is:inline>
+    window.__DATA__ = {
+      donaciones: {JSON.stringify(donaciones.rows)},
+      donantes: {JSON.stringify(donantes.rows)},
+      stats: {JSON.stringify(stats.rows[0])}
+    };
+  </script>
+
+  <!-- Contenedor para Alpine -->
+  <div x-data="donacionesApp" x-cloak>
+    <!-- Estadísticas -->
+    <div class="grid grid-cols-4 gap-4 mb-6">
+      <div class="bg-white p-4 rounded shadow" x-text="`Total: ${stats.total}`"></div>
+      <div class="bg-white p-4 rounded shadow" x-text="`Aceptadas: ${stats.aceptados}`"></div>
+      <div class="bg-white p-4 rounded shadow" x-text="`Recibidas: ${stats.recibidos}`"></div>
+      <div class="bg-white p-4 rounded shadow" x-text="`Rechazadas: ${stats.rechazados}`"></div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="flex border-b mb-4">
+      <button @click="tab = 'lista'" :class="tab === 'lista' ? 'border-b-2 border-blue-500' : ''" class="px-4 py-2">
+        Lista
+      </button>
+      <button @click="tab = 'nueva'" :class="tab === 'nueva' ? 'border-b-2 border-blue-500' : ''" class="px-4 py-2">
+        Nueva Donación
+      </button>
+    </div>
+
+    <!-- Lista -->
+    <div x-show="tab === 'lista'">
+      <input x-model="filtro" placeholder="Buscar..." class="mb-4 p-2 border rounded w-full">
+      
+      <div class="overflow-x-auto">
+        <table class="min-w-full bg-white">
+          <thead>
+            <tr class="bg-gray-100">
+              <th class="py-2 px-4">ID</th>
+              <th class="py-2 px-4">Donante</th>
+              <th class="py-2 px-4">Fecha</th>
+              <th class="py-2 px-4">Tipo</th>
+              <th class="py-2 px-4">Estado</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="d in donacionesFiltradas" :key="d.id">
+              <tr class="border-t">
+                <td class="py-2 px-4" x-text="d.id"></td>
+                <td class="py-2 px-4" x-text="d.donante_nombre"></td>
+                <td class="py-2 px-4" x-text="new Date(d.fecha).toLocaleDateString()"></td>
+                <td class="py-2 px-4" x-text="d.tipo_material"></td>
+                <td class="py-2 px-4">
+                  <span x-text="d.estado" 
+                    :class="{
+                      'bg-green-100 text-green-800': d.estado === 'Aceptado',
+                      'bg-yellow-100 text-yellow-800': d.estado === 'Recibido',
+                      'bg-red-100 text-red-800': d.estado === 'Rechazado'
+                    }" 
+                    class="px-2 py-1 rounded-full text-xs">
+                  </span>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Formulario -->
+    <div x-show="tab === 'nueva'" class="bg-white p-6 rounded shadow">
+      <form @submit.prevent="guardarDonacion">
+        <div class="mb-4">
+          <label class="block mb-2">Donante</label>
+          <select x-model="nuevaDonacion.donante_id" class="w-full p-2 border rounded" required>
+            <option value="">Seleccionar</option>
+            <template x-for="d in donantes" :key="d.id">
+              <option :value="d.id" x-text="`${d.nombre} (${d.tipo})`"></option>
+            </template>
+          </select>
+        </div>
+
+        <div class="mb-4">
+          <label class="block mb-2">Fecha</label>
+          <input type="date" x-model="nuevaDonacion.fecha" class="w-full p-2 border rounded" required>
+        </div>
+
+        <div class="mb-4">
+          <label class="block mb-2">Tipo</label>
+          <select x-model="nuevaDonacion.tipo_material" class="w-full p-2 border rounded" required>
+            <option value="Libro">Libro</option>
+            <option value="Revista">Revista</option>
+            <option value="Otro">Otro</option>
+          </select>
+        </div>
+
+        <div class="mb-4">
+          <label class="block mb-2">Estado</label>
+          <select x-model="nuevaDonacion.estado" class="w-full p-2 border rounded" required>
+            <option value="Recibido">Recibido</option>
+            <option value="Aceptado">Aceptado</option>
+            <option value="Rechazado">Rechazado</option>
+          </select>
+        </div>
+
+        <div class="flex justify-end gap-2">
+          <button type="button" @click="tab = 'lista'" class="px-4 py-2 bg-gray-200 rounded">
+            Cancelar
+          </button>
+          <button type="submit" class="px-4 py-2 bg-blue-500 text-white rounded">
+            Guardar
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Alpine JS -->
+  <script is:inline>
+    document.addEventListener('alpine:init', () => {
+      Alpine.data('donacionesApp', () => ({
+        tab: 'lista',
+        donaciones: JSON.parse(window.__DATA__.donaciones),
+        donantes: JSON.parse(window.__DATA__.donantes),
+        stats: JSON.parse(window.__DATA__.stats),
+        filtro: '',
+        nuevaDonacion: {
+          donante_id: '',
+          fecha: new Date().toISOString().split('T')[0],
+          tipo_material: 'Libro',
+          estado: 'Recibido',
+          observaciones: ''
+        },
+        
+        get donacionesFiltradas() {
+          return this.donaciones.filter(d => 
+            d.donante_nombre.toLowerCase().includes(this.filtro.toLowerCase())
+          );
+        },
+        
+        async guardarDonacion() {
+          try {
+            const res = await fetch('/api/donaciones', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(this.nuevaDonacion)
+            });
+            
+            if (!res.ok) throw new Error('Error al guardar');
+            
+            const data = await res.json();
+            this.donaciones.unshift(data);
+            this.tab = 'lista';
+            this.nuevaDonacion = {
+              donante_id: '',
+              fecha: new Date().toISOString().split('T')[0],
+              tipo_material: 'Libro',
+              estado: 'Recibido',
+              observaciones: ''
+            };
+            
+            alert('Donación guardada!');
+          } catch (error) {
+            alert(error.message);
+          }
+        }
+      }));
+    });
+  </script>
+</div>

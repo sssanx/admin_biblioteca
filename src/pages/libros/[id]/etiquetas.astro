@@ -1,0 +1,215 @@
+---
+// src/pages/libros/etiquetas/[id].astro
+export const prerender = false;
+
+import db from "../../../lib/db";
+import { QRCodeSVG } from 'qrcode.react';
+
+const { id } = Astro.params;
+const { num } = Astro.request.query;
+
+// --- MODO IMPRESIÓN INDIVIDUAL ---
+if (num) {
+  const { rows: [ejemplar] } = await db.query(`
+    SELECT 
+      e.numero_inventario,
+      l.titulo, 
+      l.ubicacion,
+      l.clasificacion
+    FROM ejemplares e
+    JOIN libros l ON e.libro_id = l.id
+    WHERE e.libro_id = $1 AND e.numero_inventario = $2
+  `, [id, num]);
+
+  if (!ejemplar) return new Response(null, { status: 404 });
+---
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Etiqueta {ejemplar.numero_inventario}</title>
+  <style>
+    @page { size: 50mm 25mm; margin: 0; }
+    body { 
+      font-family: Arial; 
+      margin: 0;
+      padding: 2mm;
+    }
+    .etiqueta {
+      width: 46mm;
+      height: 21mm;
+      display: flex;
+      align-items: center;
+    }
+    .qr { margin-right: 3mm; }
+    .datos { font-size: 8pt; }
+  </style>
+</head>
+<body>
+  <div class="etiqueta">
+    <div class="qr">
+      <QRCodeSVG 
+        value={JSON.stringify({
+          id: ejemplar.numero_inventario,
+          libro: id,
+          ubicacion: ejemplar.ubicacion
+        })}
+        size={60}
+      />
+    </div>
+    <div class="datos">
+      <div><strong>{ejemplar.numero_inventario}</strong></div>
+      <div>{ejemplar.titulo.substring(0, 15)}...</div>
+      <div>{ejemplar.clasificacion}</div>
+    </div>
+  </div>
+  <script>window.print();</script>
+</body>
+</html>
+  return;
+}
+
+// --- MODO GESTIÓN DE EJEMPLARES ---
+const { rows: [libro] } = await db.query(`
+  SELECT id, titulo, autor, clasificacion, ubicacion 
+  FROM libros WHERE id = $1
+`, [id]);
+
+const { rows: ejemplares } = await db.query(`
+  SELECT numero_inventario, estado 
+  FROM ejemplares 
+  WHERE libro_id = $1
+  ORDER BY numero_inventario
+`, [id]);
+
+// Crear nuevos ejemplares
+if (Astro.request.method === 'POST') {
+  const formData = await Astro.request.formData();
+  const cantidad = formData.get('cantidad') || 1;
+  
+  for (let i = 0; i < cantidad; i++) {
+    await db.query(`
+      INSERT INTO ejemplares (libro_id, numero_inventario, estado)
+      VALUES ($1, $2, 'Disponible')
+    `, [id, `${id}-${ejemplares.length + i + 1}`]);
+  }
+  return Astro.redirect(`/libros/etiquetas/${id}`);
+}
+---
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ejemplares - {libro.titulo}</title>
+  <style>
+    :root {
+      --color-primary: #005D93;
+      --color-secondary: #4a5568;
+      --border-radius: 5px;
+    }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #f8fafc;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    header {
+      background: var(--color-primary);
+      color: white;
+      padding: 1.5rem;
+      border-radius: var(--border-radius);
+      margin-bottom: 2rem;
+    }
+    .grid-ejemplares {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1rem;
+    }
+    .card-ejemplar {
+      background: white;
+      border-radius: var(--border-radius);
+      padding: 1rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .btn {
+      padding: 0.5rem 1rem;
+      border-radius: var(--border-radius);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+    .btn-primary {
+      background: var(--color-primary);
+      color: white;
+      border: none;
+    }
+    .form-container {
+      background: white;
+      padding: 1.5rem;
+      border-radius: var(--border-radius);
+      margin-bottom: 2rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Gestión de Ejemplares</h1>
+      <div>
+        <strong>Libro:</strong> {libro.titulo} ({libro.autor})<br>
+        <strong>Ubicación:</strong> {libro.ubicacion} | {libro.clasificacion}
+      </div>
+    </header>
+
+    <!-- Formulario para nuevos ejemplares -->
+    <div class="form-container">
+      <h2>Agregar ejemplares</h2>
+      <form method="POST">
+        <label>
+          Cantidad:
+          <input 
+            type="number" 
+            name="cantidad" 
+            min="1" 
+            value="1" 
+            style="padding: 0.5rem; width: 60px; margin: 0 1rem;"
+          >
+        </label>
+        <button type="submit" class="btn btn-primary">
+          Generar
+        </button>
+      </form>
+    </div>
+
+    <!-- Listado de ejemplares -->
+    <h2>Ejemplares registrados ({ejemplares.length})</h2>
+    {ejemplares.length === 0 ? (
+      <p>No hay ejemplares registrados.</p>
+    ) : (
+      <div class="grid-ejemplares">
+        {ejemplares.map(ejemplar => (
+          <div class="card-ejemplar">
+            <div><strong>Inventario:</strong> {ejemplar.numero_inventario}</div>
+            <div><strong>Estado:</strong> {ejemplar.estado}</div>
+            <a
+              href={`/libros/etiquetas/${id}?num=${ejemplar.numero_inventario}`}
+              target="_blank"
+              class="btn btn-primary"
+              style="margin-top: 0.5rem; text-decoration: none;"
+            >
+              Imprimir Etiqueta
+            </a>
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+</body>
+</html>

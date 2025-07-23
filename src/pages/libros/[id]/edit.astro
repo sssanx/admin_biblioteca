@@ -1,0 +1,36 @@
+---
+import { camposMARC } from '../../../lib/marc_campos.js';
+import libros from '../../../lib/libros.json';
+
+// Obtener el libro según el ID de la URL
+const { id } = Astro.params;
+const libro = libros.find(l => l.id === id);
+---
+
+<html>
+  <head>
+    <title>Editar libro</title>
+  </head>
+  <body>
+    <h1>Editar Libro: {libro ? libro['245_a'] : 'Nuevo'}</h1>
+
+    <form method="post">
+      {camposMARC.map(campo => (
+        <fieldset>
+          <legend>{campo.tag} - {campo.desc}</legend>
+          {campo.subcampos.map(sub => (
+            <label style="display:block; margin-bottom:0.5em;">
+              {sub.label}
+              <input 
+                type="text" 
+                name={`${campo.tag}_${sub.code}`}
+                value={libro ? libro[`${campo.tag}_${sub.code}`] : ''}
+              />
+            </label>
+          ))}
+        </fieldset>
+      ))}
+      <button type="submit">Guardar</button>
+    </form>
+  </body>
+</html>

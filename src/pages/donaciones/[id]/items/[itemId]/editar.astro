@@ -1,0 +1,66 @@
+---
+import db from '../../../../../lib/db';
+import AdminLayout from '../../../../../layouts/AdminLayout.astro';
+
+const { id: donacionId, itemId } = Astro.params;
+const url = new URL(Astro.request.url);
+
+const { rows } = await db.query(`
+  SELECT * FROM items_donacion 
+  WHERE id = $1 AND donacion_id = $2
+`, [itemId, donacionId]);
+
+if (rows.length === 0) {
+  return new Response('Item no encontrado', { status: 404 });
+}
+
+const item = rows[0];
+---
+
+<AdminLayout title="Editar Ítem de Donación" module="donaciones">
+  <div class="max-w-3xl mx-auto p-6 bg-white rounded shadow">
+    <h1 class="text-xl font-bold mb-4">Editar ítem de la donación #{donacionId}</h1>
+    <form method="POST" action={`/donaciones/${donacionId}/items/${itemId}/actualizar`}>
+      <div class="grid grid-cols-1 gap-4">
+        <div>
+          <label class="block font-medium">Título</label>
+          <input name="titulo" value={item.titulo || ''} class="input" required />
+        </div>
+        <div>
+          <label class="block font-medium">Autor</label>
+          <input name="autor" value={item.autor || ''} class="input" />
+        </div>
+        <div>
+          <label class="block font-medium">Editorial</label>
+          <input name="editorial" value={item.editorial || ''} class="input" />
+        </div>
+        <div>
+          <label class="block font-medium">Año de publicación</label>
+          <input name="anio_publicacion" type="number" value={item.anio_publicacion || ''} class="input" />
+        </div>
+        <div>
+          <label class="block font-medium">ISBN</label>
+          <input name="isbn" value={item.isbn || ''} class="input" />
+        </div>
+        <div>
+          <label class="block font-medium">Cantidad</label>
+          <input name="cantidad" type="number" value={item.cantidad || 1} class="input" required />
+        </div>
+        <div>
+          <label class="block font-medium">Descripción</label>
+          <textarea name="descripcion" class="input">{item.descripcion || ''}</textarea>
+        </div>
+        <div class="flex justify-end gap-2 mt-4">
+          <a href={`/donaciones/${donacionId}`} class="btn-secondary">Cancelar</a>
+          <button type="submit" class="btn-primary">Guardar Cambios</button>
+        </div>
+      </div>
+    </form>
+  </div>
+
+  <style>
+    .input {@apply w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm;}
+    .btn-primary {@apply bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded;}
+    .btn-secondary {@apply bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded;}
+  </style>
+</AdminLayout>

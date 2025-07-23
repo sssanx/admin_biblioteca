@@ -1,0 +1,399 @@
+---
+import db from '../lib/db';
+import AdminLayout from '../layouts/AdminLayout.astro';
+
+// Parámetros de búsqueda
+const url = new URL(Astro.request.url);
+const q = url.searchParams.get('q') || '';
+const estado = url.searchParams.get('estado') || '';
+const tipo = url.searchParams.get('tipo') || '';
+const fecha_inicio = url.searchParams.get('fecha_inicio') || '';
+const fecha_fin = url.searchParams.get('fecha_fin') || '';
+const page = parseInt(url.searchParams.get('page') || '1');
+const itemsPerPage = 10;
+const offset = (page - 1) * itemsPerPage;
+
+// Construir condiciones WHERE
+let whereConditions = [];
+let queryParams = [];
+let paramIndex = 1;
+
+if (q) {
+  whereConditions.push(`(don.nombre ILIKE $${paramIndex} OR d.id::TEXT LIKE $${paramIndex})`);
+  queryParams.push(`%${q}%`);
+  paramIndex++;
+}
+
+if (estado && estado !== 'Todos') {
+  whereConditions.push(`d.estado = $${paramIndex}`);
+  queryParams.push(estado);
+  paramIndex++;
+}
+
+if (tipo && tipo !== 'Todos') {
+  whereConditions.push(`d.tipo_material = $${paramIndex}`);
+  queryParams.push(tipo);
+  paramIndex++;
+}
+
+if (fecha_inicio) {
+  whereConditions.push(`d.fecha_registro >= $${paramIndex}`);
+  queryParams.push(fecha_inicio);
+  paramIndex++;
+}
+
+if (fecha_fin) {
+  whereConditions.push(`d.fecha_registro <= $${paramIndex}`);
+  queryParams.push(fecha_fin);
+  paramIndex++;
+}
+
+const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+// Consulta para contar total
+const countRes = await db.query(`
+  SELECT COUNT(*) 
+  FROM donaciones d
+  JOIN donantes don ON don.id = d.donante_id
+  ${whereClause}
+`, queryParams);
+const totalDonaciones = parseInt(countRes.rows[0].count);
+
+// Consulta principal con información de libros donados
+const res = await db.query(`
+  SELECT 
+    d.*, 
+    don.nombre AS donante_nombre,
+    COUNT(i.id) AS total_items,
+    SUM(i.cantidad) AS total_ejemplares,
+    (
+      SELECT COUNT(*) 
+      FROM libros l
+      JOIN items_donacion i2 ON i2.libro_id = l.id
+      WHERE i2.donacion_id = d.id AND l.origen = 'donacion'
+    ) AS total_libros_registrados,
+    (
+      SELECT COUNT(*) 
+      FROM libros l
+      JOIN items_donacion i2 ON i2.libro_id = l.id
+      WHERE i2.donacion_id = d.id AND l.disponible = true
+    ) AS libros_disponibles
+  FROM donaciones d
+  JOIN donantes don ON don.id = d.donante_id
+  LEFT JOIN items_donacion i ON i.donacion_id = d.id
+  ${whereClause}
+  GROUP BY d.id, don.nombre
+  ORDER BY d.fecha_registro DESC
+  LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+`, [...queryParams, itemsPerPage, offset]);
+
+const donaciones = res.rows;
+
+const totalPages = Math.ceil(totalDonaciones / itemsPerPage);
+
+// Generar reporte PDF si se solicita
+if (url.searchParams.get('generar_reporte') === 'true') {
+  const reporteData = {
+    titulo: 'Reporte de Donaciones',
+    filtros: {
+      texto: q,
+      estado,
+      tipo,
+      fecha_inicio,
+      fecha_fin
+    },
+    datos: donaciones,
+    total: totalDonaciones,
+    fecha_generacion: new Date().toLocaleString()
+  };
+
+  return Astro.redirect(`/donaciones/reporte?data=${encodeURIComponent(JSON.stringify(reporteData))}`);
+}
+---
+
+<AdminLayout title="Gestión de Donaciones" module="donaciones">
+  <div class="container mx-auto px-4 py-6">
+    <!-- Encabezado -->
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+      <div>
+        <h1 class="text-2xl font-bold text-gray-800 flex items-center">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-blue-600 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+          </svg>
+          Donaciones Registradas
+        </h1>
+        <p class="text-sm text-gray-600">Total: {totalDonaciones} donaciones</p>
+      </div>
+      <div class="flex gap-3">
+        <a href="/donaciones/nuevo" class="btn-primary">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+          </svg>
+          Nueva Donación
+        </a>
+      </div>
+    </div>
+
+    <!-- Barra de búsqueda -->
+    <div class="bg-white rounded-lg shadow p-4 mb-6">
+      <form method="GET" class="flex flex-col md:flex-row gap-4">
+        <div class="flex-grow relative">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input 
+            type="text" 
+            name="q" 
+            value={q}
+            placeholder="Buscar por donante, ID o referencia..." 
+            class="input-search pl-10"
+          />
+        </div>
+        <button type="submit" class="btn-primary">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          Buscar
+        </button>
+        {q && (
+          <a href="/donaciones" class="btn-secondary">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+            Limpiar
+          </a>
+        )}
+      </form>
+    </div>
+
+    <!-- Filtros avanzados -->
+    <div class="bg-white rounded-lg shadow p-4 mb-6">
+      <form method="GET" class="space-y-4">
+        <input type="hidden" name="q" value={q} />
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Estado</label>
+            <select name="estado" class="input-select">
+              <option value="Todos">Todos</option>
+              <option value="Recibido" selected={estado === 'Recibido'}>Recibido</option>
+              <option value="Evaluación" selected={estado === 'Evaluación'}>Evaluación</option>
+              <option value="Aceptado" selected={estado === 'Aceptado'}>Aceptado</option>
+              <option value="Rechazado" selected={estado === 'Rechazado'}>Rechazado</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Tipo de Material</label>
+            <select name="tipo" class="input-select">
+              <option value="Todos">Todos</option>
+              <option value="Libro" selected={tipo === 'Libro'}>Libros</option>
+              <option value="Revista" selected={tipo === 'Revista'}>Revistas</option>
+              <option value="Multimedia" selected={tipo === 'Multimedia'}>Multimedia</option>
+              <option value="Equipo" selected={tipo === 'Equipo'}>Equipo</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Fecha Inicio</label>
+            <input type="date" name="fecha_inicio" value={fecha_inicio} class="input-date">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Fecha Fin</label>
+            <input type="date" name="fecha_fin" value={fecha_fin} class="input-date">
+          </div>
+        </div>
+        <div class="flex justify-end gap-3">
+          <button type="submit" class="btn-primary">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+            </svg>
+            Aplicar Filtros
+          </button>
+          <a href="/donaciones" class="btn-secondary">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Restablecer
+          </a>
+          <button 
+            type="submit" 
+            name="generar_reporte" 
+            value="true" 
+            class="btn-reporte"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            Generar PDF
+          </button>
+          <a href="/api/exportar-excel" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition">
+            Exportar a Excel
+          </a>
+        </div>
+      </form>
+    </div>
+
+    <!-- Tabla de resultados -->
+    <div class="bg-white rounded-lg shadow overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="table-header">ID</th>
+              <th class="table-header">Donante</th>
+              <th class="table-header">Fecha</th>
+              <th class="table-header">Tipo</th>
+              <th class="table-header">Items</th>
+              <th class="table-header">Ejemplares</th>
+              <th class="table-header">Libros Registrados</th>
+              <th class="table-header">Disponibles</th>
+              <th class="table-header">Estado</th>
+              <th class="table-header">Acciones</th>
+            </tr>
+          </thead>
+          <tbody class="bg-white divide-y divide-gray-200">
+            {donaciones.map(d => (
+              <tr class="hover:bg-gray-50">
+                <td class="table-cell">#{d.id}</td>
+                <td class="table-cell font-medium">{d.donante_nombre}</td>
+                <td class="table-cell">{new Date(d.fecha_registro).toLocaleDateString()}</td>
+                <td class="table-cell">{d.tipo_material}</td>
+                <td class="table-cell text-center">{d.total_items || 0}</td>
+                <td class="table-cell text-center">{d.total_ejemplares || 0}</td>
+                <td class="table-cell text-center">
+                  {d.total_libros_registrados > 0 ? (
+                    <span class="bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs font-medium">
+                      {d.total_libros_registrados}
+                    </span>
+                  ) : (
+                    <span class="bg-gray-100 text-gray-800 px-2 py-1 rounded-full text-xs font-medium">
+                      0
+                    </span>
+                  )}
+                </td>
+                <td class="table-cell text-center">
+                  {d.libros_disponibles > 0 ? (
+                    <span class="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs font-medium">
+                      {d.libros_disponibles}
+                    </span>
+                  ) : (
+                    <span class="bg-gray-100 text-gray-800 px-2 py-1 rounded-full text-xs font-medium">
+                      0
+                    </span>
+                  )}
+                </td>
+                <td class="table-cell">
+                  <span class={`badge-${d.estado.toLowerCase()}`}>
+                    {d.estado}
+                  </span>
+                </td>
+                <td class="table-cell">
+                  <div class="flex gap-2">
+                    <a href={`/donaciones/${d.id}`} class="btn-action btn-view" title="Ver detalle">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                    </a>
+                    <a href={`/donaciones/${d.id}/editar`} class="btn-action btn-edit" title="Editar">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </a>
+                    <a href={`/donaciones/${d.id}/etiquetas`} class="btn-action btn-print" target="_blank" title="Imprimir etiquetas">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                      </svg>
+                    </a>
+                    <form 
+                      action={`/donaciones/${d.id}/eliminar`} 
+                      method="POST" 
+                      onsubmit="return confirm('¿Estás seguro de eliminar esta donación?')" 
+                      style="display: inline;"
+                    >
+                      <button type="submit" class="btn-action btn-delete" title="Eliminar">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Paginación -->
+      {totalPages > 1 && (
+        <div class="bg-gray-50 px-4 py-3 flex items-center justify-between border-t border-gray-200">
+          <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+            <div>
+              <p class="text-sm text-gray-700">
+                Mostrando <span class="font-medium">{offset + 1}</span> a 
+                <span class="font-medium">{Math.min(offset + itemsPerPage, totalDonaciones)}</span> de 
+                <span class="font-medium">{totalDonaciones}</span> resultados
+              </p>
+            </div>
+            <div>
+              <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Paginación">
+                {page > 1 && (
+                  <a 
+                    href={`?page=${page - 1}${q ? `&q=${encodeURIComponent(q)}` : ''}${estado ? `&estado=${estado}` : ''}${tipo ? `&tipo=${tipo}` : ''}${fecha_inicio ? `&fecha_inicio=${fecha_inicio}` : ''}${fecha_fin ? `&fecha_fin=${fecha_fin}` : ''}`}
+                    class="btn-pagination"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                    </svg>
+                  </a>
+                )}
+                {Array.from({length: totalPages}, (_, i) => i + 1).map(p => (
+                  <a 
+                    href={`?page=${p}${q ? `&q=${encodeURIComponent(q)}` : ''}${estado ? `&estado=${estado}` : ''}${tipo ? `&tipo=${tipo}` : ''}${fecha_inicio ? `&fecha_inicio=${fecha_inicio}` : ''}${fecha_fin ? `&fecha_fin=${fecha_fin}` : ''}`}
+                    class={`btn-pagination ${p === page ? 'btn-pagination-active' : ''}`}
+                    aria-current={p === page ? 'page' : undefined}
+                    key={p}
+                  >
+                    {p}
+                  </a>
+                ))}
+                {page < totalPages && (
+                  <a 
+                    href={`?page=${page + 1}${q ? `&q=${encodeURIComponent(q)}` : ''}${estado ? `&estado=${estado}` : ''}${tipo ? `&tipo=${tipo}` : ''}${fecha_inicio ? `&fecha_inicio=${fecha_inicio}` : ''}${fecha_fin ? `&fecha_fin=${fecha_fin}` : ''}`}
+                    class="btn-pagination"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                    </svg>
+                  </a>
+                )}
+              </nav>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  </div>
+
+  <style>
+    .btn-primary {@apply bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded flex items-center text-sm font-medium transition-colors;}
+    .btn-secondary {@apply bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded flex items-center text-sm font-medium transition-colors;}
+    .btn-reporte {@apply bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded flex items-center text-sm font-medium transition-colors;}
+    .input-search {@apply w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 transition-colors;}
+    .input-select {@apply mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md border transition-colors;}
+    .input-date {@apply mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm transition-colors;}
+    .table-header {@apply px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider;}
+    .table-cell {@apply px-6 py-4 whitespace-nowrap text-sm text-gray-500;}
+    .badge-recibido, .badge-evaluación, .badge-aceptado, .badge-rechazado {@apply px-2 inline-flex text-xs leading-5 font-semibold rounded-full;}
+    .badge-recibido {@apply bg-green-100 text-green-800;}
+    .badge-evaluación {@apply bg-yellow-100 text-yellow-800;}
+    .badge-aceptado {@apply bg-blue-100 text-blue-800;}
+    .badge-rechazado {@apply bg-red-100 text-red-800;}
+    .btn-action {@apply p-2 rounded-full transition-colors;}
+    .btn-view {@apply bg-blue-100 text-blue-600 hover:bg-blue-200;}
+    .btn-edit {@apply bg-yellow-100 text-yellow-600 hover:bg-yellow-200;}
+    .btn-print {@apply bg-green-100 text-green-600 hover:bg-green-200;}
+    .btn-delete {@apply bg-red-100 text-red-600 hover:bg-red-200;}
+    .btn-pagination {@apply relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors;}
+    .btn-pagination-active {@apply z-10 bg-blue-50 border-blue-500 text-blue-600;}
+  </style>
+</AdminLayout>

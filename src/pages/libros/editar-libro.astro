@@ -1,0 +1,279 @@
+---
+// src/pages/libros/editar/[id].astro
+export const prerender = false;
+
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import db from '../../../lib/db.js';
+
+// Obtener ID del libro
+const { id } = Astro.params;
+
+// Validar ID
+if (isNaN(id)) {
+  throw new Error('ID de libro inválido');
+}
+
+// Obtener datos del libro
+const libroResult = await db.query('SELECT * FROM libros WHERE id = $1', [id]);
+const libro = libroResult.rows[0];
+
+if (!libro) {
+  throw new Error('Libro no encontrado');
+}
+
+// Obtener categorías
+const catResult = await db.query('SELECT * FROM categorias ORDER BY nombre ASC');
+const categorias = catResult.rows;
+---
+
+<AdminLayout title={`Editar ${libro.titulo}`}>
+  <main class="min-h-screen bg-gray-50 relative overflow-x-hidden font-['Inter']">
+    <div class="w-full max-w-none px-4 sm:px-6 lg:px-8 py-10 mx-4">
+      <div class="bg-white rounded-xl shadow-md p-6 sm:p-8 space-y-8 border border-gray-100">
+        
+        <!-- Encabezado -->
+        <div class="text-center">
+          <h2 class="text-3xl sm:text-4xl font-bold text-gray-800 mb-3">Editar Libro</h2>
+          <div class="w-20 h-1 bg-indigo-600 mx-auto rounded-full mb-6"></div>
+          <p class="text-gray-600">Actualizando: {libro.titulo}</p>
+        </div>
+
+        <!-- Formulario de Edición -->
+        <form id="form-editar" class="space-y-6">
+          <input type="hidden" name="id" value={libro.id} />
+          
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="md:col-span-2">
+              <label class="block text-sm font-semibold text-gray-700 mb-2">Título del Libro</label>
+              <input 
+                name="titulo" 
+                value={libro.titulo} 
+                required 
+                placeholder="Ingresa el título completo"
+                class="input-field"
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-2">Autor</label>
+              <input 
+                name="autor" 
+                value={libro.autor} 
+                required 
+                placeholder="Nombre del autor"
+                class="input-field"
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-2">Año de Publicación</label>
+              <input 
+                name="anio" 
+                type="number" 
+                value={libro.anio} 
+                required 
+                placeholder="Año"
+                class="input-field"
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-2">Clasificación</label>
+              <input 
+                name="clasificacion" 
+                value={libro.clasificacion || ''} 
+                placeholder="Ej: 863.64 GARC"
+                class="input-field"
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-2">ISBN</label>
+              <input 
+                name="isbn" 
+                value={libro.isbn} 
+                required 
+                placeholder="Número ISBN"
+                class="input-field"
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-2">Editorial</label>
+              <input 
+                name="editor" 
+                value={libro.editor || ''} 
+                placeholder="Nombre de la editorial"
+                class="input-field"
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-2">Páginas</label>
+              <input 
+                name="paginas" 
+                type="number" 
+                value={libro.paginas || ''} 
+                placeholder="Número de páginas"
+                class="input-field"
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-2">Edición</label>
+              <input 
+                name="edicion" 
+                value={libro.edicion || ''} 
+                placeholder="Ej: 3ra edición"
+                class="input-field"
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-2">Ubicación Física</label>
+              <input 
+                name="ubicacion" 
+                value={libro.ubicacion || ''} 
+                placeholder="Ej: Estante A2, Fila 3"
+                class="input-field"
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-2">Categoría</label>
+              <select name="categoria_id" required class="select-field">
+                <option value="" disabled>Selecciona una categoría</option>
+                {categorias.map((cat) => (
+                  <option 
+                    value={cat.id} 
+                    selected={cat.id === libro.categoria_id}
+                  >
+                    {cat.nombre}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div class="pt-4 flex justify-between">
+            <a href="/libros" class="btn-secondary">
+              Cancelar
+            </a>
+            <button type="submit" class="btn-primary">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+              </svg>
+              Actualizar Libro
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </main>
+
+  <!-- Script para manejar el envío del formulario -->
+  <script>
+    document.getElementById('form-editar').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      
+      const form = e.target;
+      const formData = new FormData(form);
+      const submitButton = form.querySelector('button[type="submit"]');
+      
+      // Mostrar estado de carga
+      submitButton.disabled = true;
+      submitButton.innerHTML = `
+        <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        Actualizando...
+      `;
+
+      try {
+        const response = await fetch('/api/actualizar_lib', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (response.redirected) {
+          window.location.href = response.url;
+        } else if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.message || 'Error al actualizar');
+        } else {
+          window.location.href = '/libros?success=Libro actualizado correctamente';
+        }
+      } catch (error) {
+        alert(error.message);
+        console.error('Error:', error);
+      } finally {
+        submitButton.disabled = false;
+        submitButton.innerHTML = `
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+          </svg>
+          Actualizar Libro
+        `;
+      }
+    });
+  </script>
+</AdminLayout>
+
+<style>
+  .input-field {
+    width: 100%;
+    padding: 0.625rem 1rem;
+    border-radius: 0.5rem;
+    border: 1px solid #d1d5db;
+    background-color: white;
+    transition: all 0.3s ease;
+  }
+  
+  .input-field:focus {
+    outline: none;
+    border-color: #6366f1;
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+  }
+  
+  .select-field {
+    width: 100%;
+    padding: 0.625rem 1rem;
+    border-radius: 0.5rem;
+    border: 1px solid #d1d5db;
+    background-color: white;
+    transition: all 0.3s ease;
+  }
+  
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background-color: #4f46e5;
+    color: white;
+    padding: 0.75rem 1.5rem;
+    border-radius: 0.5rem;
+    font-weight: 500;
+    transition: background-color 0.3s ease;
+  }
+  
+  .btn-primary:hover {
+    background-color: #4338ca;
+  }
+  
+  .btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background-color: #e5e7eb;
+    color: #374151;
+    padding: 0.75rem 1.5rem;
+    border-radius: 0.5rem;
+    font-weight: 500;
+    transition: background-color 0.3s ease;
+  }
+  
+  .btn-secondary:hover {
+    background-color: #d1d5db;
+  }
+</style>

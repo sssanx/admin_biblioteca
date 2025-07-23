@@ -1,0 +1,119 @@
+---
+import db from '../../../lib/db';
+
+const { id } = Astro.params;
+
+// CONSULTA COMPLETA
+const { rows: [credencial] } = await db.query(`
+  SELECT 
+    c.*,
+    u.*,
+    carr.nombre as nombre_carrera
+  FROM credenciales c
+  JOIN usuarios u ON c.usuario_id = u.id
+  LEFT JOIN carreras carr ON u.carrera_id = carr.id
+  WHERE c.id = $1
+`, [id]);
+
+if (!credencial) {
+  return new Response(null, { status: 404 });
+}
+
+const qrData = `https://tu-sistema.com/credencial/${credencial.matricula}`;
+const fechaExpiracion = credencial.fecha_expiracion 
+  ? new Date(credencial.fecha_expiracion).toLocaleDateString('es-ES')
+  : 'INDEFINIDA';
+const fechaExpedicion = new Date(credencial.fecha_creacion).toLocaleDateString('es-ES');
+---
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Credencial - {credencial.nombre}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    @page { size: A4 landscape; margin: 0; }
+    @media print {
+      body { margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; }
+      .no-print { display: none !important; }
+      .credential { transform: scale(1.2); box-shadow: none; }
+    }
+    .credential {
+      width: 85mm;
+      min-height: 60mm;
+      background: white;
+      border: 1px solid #e2e8f0;
+      display: flex;
+      flex-direction: column;
+    }
+  </style>
+</head>
+<body class="bg-gray-100 flex flex-col items-center justify-center p-4">
+  <!-- Botones -->
+  <div class="no-print mb-4 flex gap-2">
+    <button onclick="window.print()" class="bg-blue-600 text-white px-4 py-2 rounded-lg">
+      <i class="fas fa-print mr-2"></i>Imprimir
+    </button>
+  </div>
+
+  <!-- Credencial -->
+  <div class="credential rounded-lg shadow-lg overflow-hidden text-xs">
+    <!-- Encabezado -->
+    <div class="bg-blue-800 text-white text-center py-1">
+      <h1 class="text-base font-bold">INSTITUTO TECNOLÓGICO</h1>
+      <p>Credencial de Biblioteca</p>
+    </div>
+
+    <!-- Cuerpo -->
+    <div class="flex flex-1">
+      <!-- Izquierda -->
+      <div class="w-2/3 p-2 flex flex-col gap-1">
+        <div class="flex gap-2 items-start">
+          {credencial.foto_url ? (
+            <img src={credencial.foto_url} class="w-16 h-16 object-cover border rounded"/>
+          ) : (
+            <div class="w-16 h-16 bg-gray-200 border rounded flex items-center justify-center">
+              <i class="fas fa-user text-2xl text-gray-500"></i>
+            </div>
+          )}
+          <div>
+            <h2 class="text-sm font-bold">{credencial.nombre}</h2>
+            <p class="text-[10px]">{credencial.email || credencial.correo}</p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-1 mt-1">
+          <div><span class="font-semibold">Matrícula:</span> {credencial.matricula}</div>
+          <div><span class="font-semibold">Carrera:</span> {credencial.nombre_carrera || credencial.carrera}</div>
+          <div><span class="font-semibold">Semestre:</span> {credencial.semestre || 'N/A'}</div>
+          <div><span class="font-semibold">Tipo:</span> {credencial.rol === 'admin' ? 'Administrador' : 'Estudiante'}</div>
+          <div><span class="font-semibold">Expira:</span> {fechaExpiracion}</div>
+        </div>
+      </div>
+
+      <!-- Derecha QR -->
+      <div class="w-1/3 border-l border-gray-200 flex flex-col items-center justify-center p-2">
+        <img src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${qrData}`} 
+             alt="QR" class="w-20 h-20"/>
+        <p class="text-[9px] mt-1 text-center">
+          Escanear para verificar
+          <br>
+          <span class="font-mono">{credencial.matricula}</span>
+        </p>
+      </div>
+    </div>
+
+    <!-- Pie -->
+    <div class="bg-blue-50 text-center py-1 text-[10px]">
+      Válida solo con identificación oficial
+    </div>
+  </div>
+
+  <script>
+    // Auto-impresión opcional
+    // window.addEventListener('load', () => setTimeout(() => window.print(), 500));
+  </script>
+</body>
+</html>

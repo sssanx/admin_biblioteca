@@ -1,0 +1,24 @@
+---
+import db from '../../../lib/db';
+
+const id = Astro.params.id;
+
+const res = await db.query(
+  `SELECT contenido, tipo_mime FROM comprobantes WHERE id = $1`, 
+  [id]
+);
+
+if (res.rows.length === 0) {
+  return new Response('Comprobante no encontrado', { status: 404 });
+}
+
+const { contenido, tipo_mime } = res.rows[0];
+
+return new Response(contenido, {
+  status: 200,
+  headers: {
+    'Content-Type': tipo_mime || 'application/octet-stream',
+    'Content-Disposition': 'inline',
+  }
+});
+---

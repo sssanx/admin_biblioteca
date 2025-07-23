@@ -1,6 +1,6 @@
 export const prerender = false;
 
-import db from '../../lib/db.js';
+import db from '../../lib/db';
 
 
 export async function POST({ request }) {

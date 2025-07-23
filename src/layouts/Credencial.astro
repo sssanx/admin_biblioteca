@@ -1,0 +1,470 @@
+---
+const {
+  nombre = 'Nombre del Usuario',
+  matricula = 'MAT-000000',
+  codigoBarras = 'LIB123456789',
+  fechaExpiracion = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+  carrera = 'Carrera del Usuario',
+  semestre = '1',
+  tipoUsuario = 'Estudiante',
+  fotoUrl = '',
+  qrData = `https://tu-sistema.com/credencial/verificar/${matricula}`
+} = Astro.props;
+
+const fechaFormateada = new Date(fechaExpiracion).toLocaleDateString('es-MX', {
+  year: 'numeric',
+  month: 'long',
+  day: 'numeric'
+});
+---
+
+<div class="credencial-container">
+  <!-- Controles de usuario -->
+  <div class="controls">
+    <button id="printBtn" class="control-btn print">
+      <i class="fas fa-print"></i> Imprimir
+    </button>
+    <button id="flipBtn" class="control-btn flip">
+      <i class="fas fa-sync-alt"></i> Girar
+    </button>
+    <button id="downloadBtn" class="control-btn download">
+      <i class="fas fa-download"></i> Descargar
+    </button>
+  </div>
+
+  <!-- Credencial -->
+  <div class="credencial-biblioteca">
+    <div id="tarjeta" class="tarjeta">
+      <!-- Frente -->
+      <div class="frente">
+        <div class="header">
+          <div class="institucion">
+            <i class="fas fa-book-open"></i>
+            <span>Biblioteca Universitaria</span>
+          </div>
+          <div class="logo-institucional">
+            <i class="fas fa-university"></i>
+          </div>
+        </div>
+        
+        <div class="contenido">
+          <div class="foto">
+            {fotoUrl
+              ? <img src={fotoUrl} alt="Foto del usuario" />
+              : <div class="user-icon"><i class="fas fa-user-graduate"></i></div>}
+          </div>
+          
+          <div class="datos">
+            <h2 class="nombre">{nombre}</h2>
+            <div class="datos-grid">
+              <div class="dato">
+                <span class="etiqueta">Matrícula</span>
+                <span class="valor">{matricula}</span>
+              </div>
+              <div class="dato">
+                <span class="etiqueta">Carrera</span>
+                <span class="valor">{carrera}</span>
+              </div>
+              <div class="dato">
+                <span class="etiqueta">Semestre</span>
+                <span class="valor">{semestre}</span>
+              </div>
+              <div class="dato">
+                <span class="etiqueta">Tipo</span>
+                <span class="valor">{tipoUsuario}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="footer">
+          <div class="codigo-barras">{codigoBarras}</div>
+          <div class="fecha-expiracion">
+            <span>Válida hasta: {fechaFormateada}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Reverso -->
+      <div class="reverso">
+        <div class="qr-section">
+          <div class="qr-container">
+            <img
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrData)}&bgcolor=F8FAFF`}
+              alt="Código QR"
+            />
+          </div>
+          <div class="qr-text">
+            <p>Escanea para verificar identidad</p>
+            <p class="matricula">{matricula}</p>
+          </div>
+        </div>
+        
+        <div class="contacto">
+          <p><i class="fas fa-envelope"></i> biblioteca@universidad.edu.mx</p>
+          <p><i class="fas fa-phone"></i> (555) 123-4567 Ext. 890</p>
+        </div>
+        
+        <div class="seguridad">
+          <i class="fas fa-shield-alt"></i> Documento oficial - Prohibida su reproducción
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style is:global>
+  .credencial-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+    padding: 20px;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  }
+  
+  .controls {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 15px;
+  }
+  
+  .control-btn {
+    padding: 8px 15px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.3s ease;
+  }
+  
+  .control-btn i {
+    font-size: 14px;
+  }
+  
+  .control-btn.print {
+    background-color: #2563eb;
+    color: white;
+  }
+  
+  .control-btn.flip {
+    background-color: #7c3aed;
+    color: white;
+  }
+  
+  .control-btn.download {
+    background-color: #059669;
+    color: white;
+  }
+  
+  .control-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  }
+  
+  .credencial-biblioteca {
+    perspective: 1000px;
+    width: 100%;
+    max-width: 350px;
+  }
+  
+  .tarjeta {
+    width: 100%;
+    height: 220px;
+    position: relative;
+    transition: transform 0.8s;
+    transform-style: preserve-3d;
+    cursor: pointer;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+    border-radius: 12px;
+  }
+  
+  .tarjeta.flipped {
+    transform: rotateY(180deg);
+  }
+  
+  .frente, .reverso {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    backface-visibility: hidden;
+    border-radius: 10px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .frente {
+    background: linear-gradient(135deg, #ffffff 0%, #f0f7ff 100%);
+    border: 1px solid #d1e0ff;
+  }
+  
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 15px;
+    background: linear-gradient(to right, #2563eb, #3b82f6);
+    color: white;
+  }
+  
+  .institucion {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    font-size: 16px;
+  }
+  
+  .logo-institucional i {
+    font-size: 24px;
+    opacity: 0.8;
+  }
+  
+  .contenido {
+    display: flex;
+    flex: 1;
+    padding: 15px;
+    gap: 15px;
+  }
+  
+  .foto {
+    width: 90px;
+    height: 110px;
+    border-radius: 8px;
+    overflow: hidden;
+    background: linear-gradient(135deg, #e6f0ff 0%, #d1e0ff 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #bfd4ff;
+  }
+  
+  .foto img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  
+  .user-icon {
+    color: #3b82f6;
+    font-size: 40px;
+  }
+  
+  .datos {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .nombre {
+    margin: 0 0 10px 0;
+    color: #1e3a8a;
+    font-size: 18px;
+    border-bottom: 1px solid #dbeafe;
+    padding-bottom: 5px;
+  }
+  
+  .datos-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    flex: 1;
+  }
+  
+  .dato {
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .etiqueta {
+    font-size: 10px;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+  }
+  
+  .valor {
+    font-size: 13px;
+    color: #1e293b;
+    font-weight: 500;
+    margin-top: 2px;
+  }
+  
+  .footer {
+    padding: 8px 15px;
+    background: #f8fafc;
+    border-top: 1px solid #e2e8f0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  
+  .codigo-barras {
+    font-family: 'Libre Barcode 128', cursive;
+    font-size: 24px;
+    color: #1e3a8a;
+  }
+  
+  .fecha-expiracion {
+    font-size: 10px;
+    color: #64748b;
+  }
+  
+  .reverso {
+    background: linear-gradient(135deg, #ffffff 0%, #f0f7ff 100%);
+    transform: rotateY(180deg);
+    padding: 15px;
+    align-items: center;
+  }
+  
+  .qr-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 15px;
+  }
+  
+  .qr-container {
+    background: white;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid #d1e0ff;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+  }
+  
+  .qr-container img {
+    width: 150px;
+    height: 150px;
+  }
+  
+  .qr-text {
+    text-align: center;
+  }
+  
+  .qr-text p {
+    margin: 0;
+    font-size: 12px;
+    color: #3b82f6;
+    font-weight: 600;
+  }
+  
+  .qr-text .matricula {
+    font-family: monospace;
+    font-size: 14px;
+    background: #e6f0ff;
+    padding: 3px 8px;
+    border-radius: 4px;
+    margin-top: 5px;
+  }
+  
+  .contacto {
+    margin-top: auto;
+    font-size: 10px;
+    color: #64748b;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  
+  .contacto i {
+    margin-right: 5px;
+    color: #3b82f6;
+  }
+  
+  .seguridad {
+    font-size: 8px;
+    color: #94a3b8;
+    text-align: center;
+    margin-top: 10px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  
+  .seguridad i {
+    color: #3b82f6;
+  }
+  
+  @media print {
+    .controls {
+      display: none;
+    }
+    
+    .tarjeta {
+      box-shadow: none;
+      transform: none !important;
+    }
+    
+    .reverso {
+      display: none;
+    }
+    
+    body {
+      background: white !important;
+    }
+  }
+</style>
+
+<script is:inline>
+  document.addEventListener('DOMContentLoaded', () => {
+    const tarjeta = document.getElementById('tarjeta');
+    const flipBtn = document.getElementById('flipBtn');
+    const printBtn = document.getElementById('printBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
+    
+    // Girar tarjeta
+    flipBtn.addEventListener('click', () => {
+      tarjeta.classList.toggle('flipped');
+    });
+    
+    // Imprimir credencial
+    printBtn.addEventListener('click', () => {
+      window.print();
+    });
+    
+    // Descargar como imagen (usando html2canvas)
+    downloadBtn.addEventListener('click', async () => {
+      try {
+        // Cargar html2canvas dinámicamente
+        const html2canvas = await import('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
+        
+        // Crear canvas con ambos lados
+        const canvas1 = await html2canvas.default(tarjeta.querySelector('.frente'));
+        const canvas2 = await html2canvas.default(tarjeta.querySelector('.reverso'));
+        
+        // Crear un nuevo canvas para combinar ambas imágenes
+        const combinedCanvas = document.createElement('canvas');
+        const ctx = combinedCanvas.getContext('2d');
+        combinedCanvas.width = canvas1.width + canvas2.width + 20;
+        combinedCanvas.height = Math.max(canvas1.height, canvas2.height);
+        
+        // Dibujar ambas imágenes
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, combinedCanvas.width, combinedCanvas.height);
+        ctx.drawImage(canvas1, 0, 0);
+        ctx.drawImage(canvas2, canvas1.width + 20, 0);
+        
+        // Descargar la imagen combinada
+        const link = document.createElement('a');
+        link.download = `credencial-${document.querySelector('.valor').textContent}.png`;
+        link.href = combinedCanvas.toDataURL('image/png');
+        link.click();
+      } catch (error) {
+        console.error('Error al descargar:', error);
+        alert('Error al descargar la credencial');
+      }
+    });
+    
+    // Animación al cargar
+    setTimeout(() => {
+      tarjeta.style.transform = 'rotateY(0deg)';
+    }, 100);
+  });
+</script>

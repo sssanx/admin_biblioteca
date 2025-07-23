@@ -1,0 +1,111 @@
+---
+import db from '../lib/db.js';      /* ajusta la ruta si es distinta */
+
+const url        = new URL(Astro.request.url);
+const modo       = url.searchParams.get('modo')      ?? 'individual';
+const libroId    = url.searchParams.get('libroId');
+const ejemplarId = url.searchParams.get('ejemplarId');
+
+let ejemplares = [];
+let libro      = {};
+
+if (modo === 'masivo' && libroId) {
+  const [l,e] = await Promise.all([
+    db.query('SELECT * FROM libros WHERE id=$1', [libroId]),
+    db.query(`SELECT codigo_barras, numero_ejemplar, ubicacion_especifica
+              FROM ejemplares
+              WHERE libro_id=$1
+              ORDER BY numero_ejemplar`, [libroId])
+  ]);
+  libro      = l.rows[0] ?? {};
+  ejemplares = e.rows;
+} else if (ejemplarId) {
+  const res = await db.query(`
+      SELECT e.codigo_barras, e.numero_ejemplar, e.ubicacion_especifica,
+             l.*
+      FROM ejemplares e
+      JOIN libros l ON l.id = e.libro_id
+      WHERE e.id = $1`, [ejemplarId]);
+  ejemplares = res.rows;
+  libro      = res.rows[0] ?? {};
+}
+---
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf‑8">
+  <title>Etiquetas – {libro.titulo ?? '‑'}</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+
+  <style>
+    :root{ --cols:4; --gap:6mm; --w:48mm; --h:28mm }
+    body{margin:0;font-family:system-ui}
+    .panel{padding:12px 18px;border-bottom:1px solid #ccc}
+    .grid{display:grid;gap:var(--gap);
+          grid-template-columns:repeat(var(--cols),var(--w));
+          justify-content:center;padding:var(--gap)}
+    .etq{border:0.2mm dashed #888;width:var(--w);height:var(--h);
+         display:flex;flex-direction:column;justify-content:center;align-items:center;
+         font-size:8pt;box-sizing:border-box}
+    svg{width:100%;max-height:15mm}
+    @media print{
+      .panel{display:none}
+      .etq{border:none}
+    }
+  </style>
+</head>
+
+<body>
+  <!-- panel -->
+  <form class="panel" onsubmit="return false;">
+    Formato&nbsp;
+    <select id="sel">
+      <option value="3x4">3 × 4 (58×33 mm)</option>
+      <option value="3x6">3 × 6 (48×28 mm)</option>
+      <option value="4x6" selected>4 × 6 (48×28 mm)</option>
+    </select>
+    <button type="button" onclick="aplicar()">Aplicar</button>
+    <button type="button" onclick="window.print()">Imprimir</button>
+  </form>
+
+  <!-- etiquetas -->
+  <div id="grid" class="grid"></div>
+
+  <!-- datos -->
+  <script type="application/json" id="ej">{JSON.stringify(ejemplares)}</script>
+  <script type="application/json" id="li">{JSON.stringify(libro)}</script>
+
+  <script>
+  const EJ   = JSON.parse(document.getElementById('ej').textContent || '[]');
+  const LIB  = JSON.parse(document.getElementById('li').textContent || '{}');
+
+  function aplicar(){
+    const v = document.getElementById('sel').value;
+    const r = document.documentElement.style;
+    if (v==='3x4'){ r.setProperty('--cols',3); r.setProperty('--w','58mm'); r.setProperty('--h','33mm'); }
+    if (v==='3x6'){ r.setProperty('--cols',3); r.setProperty('--w','48mm'); r.setProperty('--h','28mm'); }
+    if (v==='4x6'){ r.setProperty('--cols',4); r.setProperty('--w','48mm'); r.setProperty('--h','28mm'); }
+    pintar();
+  }
+
+  function pintar(){
+    const g=document.getElementById('grid');
+    g.innerHTML='';
+    EJ.forEach((e,i)=>{
+      const d=document.createElement('div');
+      d.className='etq';
+      d.innerHTML=`
+        <strong style="font-size:7pt">${(LIB.titulo||'').slice(0,28)}</strong>
+        <span style="font-size:6pt">${(LIB.autor||'').slice(0,25)}</span>
+        <svg id="bc${i}"></svg>
+        <span style="font-size:6pt">Ej. ${e.numero_ejemplar} • ${e.ubicacion_especifica||''}</span>`;
+      g.appendChild(d);
+      JsBarcode('#bc'+i, e.codigo_barras, {width:1.4,height:18,fontSize:8,margin:0});
+    });
+  }
+
+  aplicar();                // primera carga
+  </script>
+</body>
+</html>

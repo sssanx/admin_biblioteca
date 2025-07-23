@@ -1,0 +1,577 @@
+---
+// backend/query.astro
+import db from '../../lib/db.js';
+
+const url = new URL(Astro.request.url);
+const queryParam = url.searchParams.get('q') || '';
+const searchQuery = decodeURIComponent(queryParam.trim());
+
+let resultados = [];
+if (searchQuery.length >= 2) {
+  try {
+    const { rows } = await db.query(
+      `SELECT 
+        e.id,
+        e.codigo_barras,
+        e.numero_adquisicion,
+        e.numero_ejemplar,
+        e.ubicacion_especifica,
+        l.titulo
+       FROM ejemplares e
+       JOIN libros l ON l.id = e.libro_id
+       WHERE e.codigo_barras ILIKE $1
+          OR e.numero_adquisicion ILIKE $1
+          OR l.titulo ILIKE $1
+       ORDER BY l.titulo, e.numero_ejemplar
+       LIMIT 25`,
+      [`%${searchQuery}%`]
+    );
+
+    resultados = rows.map(r => ({
+      id: r.id,
+      codigo: r.codigo_barras || 'SN',
+      titulo: r.titulo || 'Sin título',
+      ubic: r.ubicacion_especifica || 'Sin ubicación'
+    }));
+  } catch (err) {
+    console.error('Error en la consulta:', err);
+  }
+}
+---
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Generador de Etiquetas - Biblioteca</title>
+
+<!-- Librerías -->
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+
+<!-- Iconos (Font Awesome) -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+<style>
+  /* =====================================================
+     PALETA Y VARIABLES
+  ===================================================== */
+  :root {
+    --color-primary:         #1B396A;
+    --color-primary-dark:    #142a51;
+    --color-primary-light:   #2a4a8a;
+    --color-success:         #4CAF50;
+    --color-success-dark:    #3d8b40;
+    --color-danger:          #E74C3C;
+    --color-danger-dark:     #c0392b;
+    --color-warning:         #F39C12;
+    --color-info:            #3498DB;
+    --color-light:           #F8F9FA;
+    --color-dark:            #2C3E50;
+    --color-gray:            #95A5A6;
+    --color-gray-light:      #ECF0F1;
+    --color-border:          #DEE2E6;
+  }
+
+  /* =====================================================
+     BASE / LAYOUT
+  ===================================================== */
+  body {
+    font-family: 'Segoe UI','Roboto','Helvetica Neue',Arial,sans-serif;
+    margin: 0;
+    padding: 20px;
+    background: var(--color-light);
+    color: var(--color-dark);
+    line-height: 1.6;
+  }
+
+  .container { max-width: 1200px; margin: 0 auto; }
+
+  header {
+    background: var(--color-primary);
+    color: #fff;
+    padding: 25px;
+    border-radius: 10px;
+    margin-bottom: 25px;
+    box-shadow: 0 4px 12px rgba(0,0,0,.1);
+    position: relative;
+    overflow: hidden;
+  }
+  header::after {
+    content: '';
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    height: 4px;
+    background: linear-gradient(90deg,var(--color-primary-dark),var(--color-primary-light));
+  }
+
+  h1, h2 { margin: 0; }
+  h1 { font-size: 1.8rem; margin-bottom: 8px; display: flex; align-items: center; gap: 12px; }
+  h2 {
+    font-size: 1.4rem; color: var(--color-primary);
+    margin-bottom: 20px; padding-bottom: 10px;
+    border-bottom: 2px solid var(--color-gray-light);
+    display: flex; align-items: center; gap: 10px;
+  }
+
+  /* =====================================================
+     FORMULARIO DE BÚSQUEDA Y SECCIONES
+  ===================================================== */
+  .search-section {
+    background: #fff;
+    padding: 25px;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.05);
+    margin-bottom: 25px;
+    border: 1px solid var(--color-border);
+  }
+
+  .search-form { display: flex; gap: 12px; }
+
+  .search-input {
+    flex: 1;
+    padding: 12px 15px;
+    border: 2px solid var(--color-border);
+    border-radius: 8px;
+    font-size: 1rem;
+    transition: all .3s;
+  }
+  .search-input:focus {
+    border-color: var(--color-primary);
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(27,57,106,.2);
+  }
+
+  /* =====================================================
+     BOTONES
+  ===================================================== */
+  .btn {
+    padding: 12px 20px;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: .95rem;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: all .3s;
+  }
+  .btn-sm { padding: 8px 12px; font-size: .85rem; }
+  .btn i  { font-size: .9em; }
+
+  .btn-primary { background: var(--color-primary); color:#fff; }
+  .btn-primary:hover { background: var(--color-primary-dark); transform: translateY(-1px); }
+
+  .btn-success { background: var(--color-success); color:#fff; }
+  .btn-success:hover { background: var(--color-success-dark); transform: translateY(-1px); }
+
+  .btn-danger  { background: var(--color-danger); color:#fff; }
+  .btn-danger:hover { background: var(--color-danger-dark); transform: translateY(-1px); }
+
+  .btn-outline { background:none; border:2px solid var(--color-primary); color:var(--color-primary); }
+  .btn-outline:hover { background:var(--color-primary); color:#fff; }
+
+  /* =====================================================
+     TABLAS
+  ===================================================== */
+  .table-responsive {
+    overflow-x: auto;
+    margin-bottom: 20px;
+    border-radius: 8px;
+    border: 1px solid var(--color-border);
+    box-shadow: 0 2px 10px rgba(0,0,0,.05);
+  }
+  table      { width:100%; border-collapse:collapse; background:#fff; }
+  th, td     { padding:14px 16px; text-align:left; border-bottom:1px solid var(--color-border); }
+  th         { background:var(--color-primary); color:#fff; font-weight:600; position:sticky; top:0; }
+  tr:hover   { background:rgba(27,57,106,.03); }
+
+  .no-results {
+    padding:30px 20px; background:var(--color-gray-light); border-radius:8px;
+    display:flex; flex-direction:column; align-items:center; gap:15px;
+    color:var(--color-dark);
+  }
+
+  .cart-actions { display:flex; gap:12px; margin-top:20px; }
+  .badge {
+    display:inline-flex; align-items:center; padding:4px 10px;
+    border-radius:20px; background:var(--color-primary); color:#fff; font-size:.85rem; font-weight:600;
+  }
+
+  /* =====================================================
+     ÁREA DE IMPRESIÓN (oculta fuera de print)
+  ===================================================== */
+  #printArea { display:none; }
+
+  /* =====================================================
+     ETIQUETAS – PANTALLA
+  ===================================================== */
+  .labels-grid {
+    display:grid;
+    grid-template-columns: repeat(4, 48mm);
+    gap: 6mm;
+    padding: 10mm;
+  }
+
+  .label {
+    width: 48mm;
+    height: 28mm;
+    border: 1px solid var(--color-primary-dark);
+    border-radius: 4px;
+    background: #fff;
+
+    display: grid;
+    grid-template-rows: 4mm auto auto 1fr;
+    box-sizing: border-box;
+    page-break-inside: avoid;
+  }
+
+  .label-header      { background: var(--color-primary); height: 4mm; }
+  .label-title {
+    padding: 1mm 2mm 0;
+    font-size: 9pt;
+    font-weight: 700;
+    color: var(--color-primary);
+    text-align: center;
+    line-height: 1.2;
+    max-height: 11mm;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  .label-content {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 2mm;
+    padding: 0 2mm;
+  }
+  .label-content svg { max-height: 14mm; max-width: 100%; }
+  .label-footer {
+    font-size: 8pt;
+    color: #666;
+    text-align: center;
+    padding-top: 1mm;
+  }
+
+  /* =====================================================
+     EFECTOS / TOOLTIPS
+  ===================================================== */
+  @keyframes fadeIn { from{opacity:0;transform:translateY(10px);} to{opacity:1;transform:translateY(0);} }
+  .fade-in { animation: fadeIn .3s ease-out forwards; }
+
+  [data-tooltip]{ position:relative; }
+  [data-tooltip]::after{
+    content:attr(data-tooltip); position:absolute; bottom:100%; left:50%; transform:translateX(-50%);
+    background:var(--color-dark); color:#fff; padding:5px 10px; border-radius:4px;
+    font-size:.8rem; white-space:nowrap; opacity:0; visibility:hidden; transition:.2s; margin-bottom:5px;
+  }
+  [data-tooltip]:hover::after{ opacity:1; visibility:visible; }
+
+  /* =====================================================
+     MODO IMPRESIÓN
+  ===================================================== */
+  @media print {
+    /* Oculta todo excepto printArea */
+    body * { visibility: hidden; margin: 0; padding: 0; }
+    #printArea, #printArea * { visibility: visible; }
+
+    /* ¡FIX! Mostrar el área de impresión */
+    #printArea {
+      display: block !important;      /*  ←  clave para evitar páginas en blanco */
+      position: absolute;
+      left: 0; top: 0;
+      width: 100%;
+      background: #fff;
+      padding: 0;
+      margin: 0;
+    }
+
+    .labels-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 48mm);
+      gap: 6mm;
+      padding: 10mm;
+      page-break-inside: avoid;
+    }
+
+    .label {
+      border: 1px solid var(--color-primary-dark);
+      box-shadow: none;
+      page-break-inside: avoid;
+    }
+  }
+</style>
+
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1><i class="fas fa-tags"></i> Generador de Etiquetas</h1>
+    <p>Sistema de gestión bibliotecaria</p>
+  </header>
+
+  <section class="search-section fade-in">
+    <h2><i class="fas fa-search"></i> Buscar Ejemplares</h2>
+    <form class="search-form" onsubmit="event.preventDefault(); buscar();">
+      <input type="text" id="searchInput" class="search-input" 
+             placeholder="Buscar por código, título o ubicación..." 
+             minlength="2" required value={searchQuery}>
+      <button type="submit" class="btn btn-primary">
+        <i class="fas fa-search"></i> Buscar
+      </button>
+    </form>
+  </section>
+
+  <section class="search-section fade-in">
+    <h2><i class="fas fa-list"></i> Resultados</h2>
+    {searchQuery && resultados.length === 0 && (
+      <div class="no-results">
+        <i class="fas fa-book-open"></i>
+        <p>No se encontraron resultados para "{searchQuery}"</p>
+        <button class="btn btn-outline" onclick="document.getElementById('searchInput').focus()">
+          <i class="fas fa-redo"></i> Intentar otra búsqueda
+        </button>
+      </div>
+    )}
+    {resultados.length > 0 && (
+      <div class="table-responsive">
+        <table>
+          <thead>
+            <tr>
+              <th><i class="fas fa-barcode"></i> Código</th>
+              <th><i class="fas fa-book"></i> Título</th>
+              <th><i class="fas fa-map-marker-alt"></i> Ubicación</th>
+              <th><i class="fas fa-cog"></i> Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="resBody">
+            {resultados.map(r => (
+              <tr key={r.id}>
+                <td>{r.codigo}</td>
+                <td>{r.titulo}</td>
+                <td>{r.ubic}</td>
+                <td>
+                  <button class="btn btn-success btn-sm" data-json={JSON.stringify(r)} data-tooltip="Agregar al carrito">
+                    <i class="fas fa-cart-plus"></i> Agregar
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </section>
+
+  <section class="search-section fade-in">
+    <h2><i class="fas fa-shopping-cart"></i> Carrito de Etiquetas <span id="cartCount" class="badge">0</span></h2>
+    <div class="table-responsive">
+      <table id="cartTable">
+        <thead>
+          <tr>
+            <th><i class="fas fa-barcode"></i> Código</th>
+            <th><i class="fas fa-book"></i> Título</th>
+            <th><i class="fas fa-map-marker-alt"></i> Ubicación</th>
+            <th><i class="fas fa-cog"></i> Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="cartBody">
+          <!-- Los elementos del carrito se agregarán aquí dinámicamente -->
+        </tbody>
+      </table>
+    </div>
+    <div class="cart-actions">
+      <button id="printBtn" class="btn btn-primary" disabled data-tooltip="Generar e imprimir etiquetas">
+        <i class="fas fa-print"></i> Imprimir Etiquetas
+      </button>
+      <button id="clearCartBtn" class="btn btn-danger" data-tooltip="Vaciar todo el carrito">
+        <i class="fas fa-trash-alt"></i> Vaciar Carrito
+      </button>
+    </div>
+  </section>
+</div>
+
+<!-- Área de impresión oculta -->
+<div id="printArea">
+  <div class="labels-grid" id="labelsGrid"></div>
+</div>
+
+<script>
+/* -------------------------- VARIABLES GLOBALES --------------------------- */
+let cart = [];
+
+/* -------------------------- ELEMENTOS DEL DOM --------------------------- */
+const resBody      = document.getElementById('resBody');
+const cartBody     = document.getElementById('cartBody');
+const cartCount    = document.getElementById('cartCount');
+const printBtn     = document.getElementById('printBtn');
+const clearCartBtn = document.getElementById('clearCartBtn');
+const labelsGrid   = document.getElementById('labelsGrid');
+
+/* ----------------------- CARGAR CARRITO AL INICIAR ---------------------- */
+function loadCart() {
+  const savedCart = localStorage.getItem('biblioteca_carrito_etiquetas');
+  if (savedCart) {
+    cart = JSON.parse(savedCart);
+    updateCart();
+  }
+}
+
+/* ------------------------- GUARDAR CARRITO ------------------------------ */
+function saveCart() {
+  localStorage.setItem('biblioteca_carrito_etiquetas', JSON.stringify(cart));
+}
+
+/* -------------------- AGREGAR EJEMPLAR AL CARRITO ----------------------- */
+resBody?.addEventListener('click', (e) => {
+  const btn = e.target.closest('.btn-success');
+  if (!btn) return;
+
+  const item = JSON.parse(btn.dataset.json);
+  cart.push(item);
+  saveCart();
+  updateCart();
+  
+  // Feedback visual
+  btn.innerHTML = '<i class="fas fa-check"></i> Agregado';
+  btn.classList.add('btn-success');
+  setTimeout(() => {
+    btn.innerHTML = '<i class="fas fa-cart-plus"></i> Agregar';
+  }, 1000);
+});
+
+/* ------------------- ELIMINAR EJEMPLAR DEL CARRITO ---------------------- */
+cartBody.addEventListener('click', (e) => {
+  const btn = e.target.closest('.btn-danger');
+  if (!btn) return;
+
+  const index = btn.dataset.index;
+  cart.splice(index, 1);
+  saveCart();
+  updateCart();
+});
+
+/* ---------------------- ACTUALIZAR VISTA CARRITO ------------------------ */
+function updateCart() {
+  cartCount.textContent = cart.length;
+  printBtn.disabled = cart.length === 0;
+
+  cartBody.innerHTML = '';
+  cart.forEach((item, index) => {
+    const tr = document.createElement('tr');
+    tr.className = 'fade-in';
+    tr.innerHTML = `
+      <td>${item.codigo}</td>
+      <td>${item.titulo}</td>
+      <td>${item.ubic}</td>
+      <td>
+        <button class="btn btn-danger btn-sm" data-index="${index}" data-tooltip="Quitar del carrito">
+          <i class="fas fa-trash"></i> Eliminar
+        </button>
+      </td>
+    `;
+    cartBody.appendChild(tr);
+  });
+
+  generateLabels();
+}
+
+/* ---------------------- GENERAR VISTA DE ETIQUETAS ---------------------- */
+function generateLabels() {
+  labelsGrid.innerHTML = '';
+
+  cart.forEach((item, index) => {
+    const labelDiv = document.createElement('div');
+    labelDiv.className = 'label';
+    labelDiv.innerHTML = `
+      <div class="label-header"></div>
+      <div class="label-title">${item.titulo}</div>
+      <div class="label-content">
+        <svg id="barcode-${index}"></svg>
+        <div id="qrcode-${index}"></div>
+      </div>
+      <div class="label-footer">
+        ${item.codigo} | ${item.ubic}
+      </div>
+    `;
+    labelsGrid.appendChild(labelDiv);
+
+    /* ---------- CÓDIGO DE BARRAS ---------- */
+    JsBarcode(`#barcode-${index}`, item.codigo, {
+      format: "CODE128",
+      lineColor: "#1B396A",
+      width: 1.5,
+      height: 30,
+      displayValue: false,
+      margin: 5
+    });
+
+    /* --------------- CÓDIGO QR --------------- */
+    const QRFactory = window.qrcode || window.QRCode;   // compatibilidad
+    if (QRFactory) {
+      const qr = QRFactory(0, 'L');
+      qr.addData(item.codigo);
+      qr.make();
+      document.getElementById(`qrcode-${index}`).innerHTML = qr.createSvgTag({
+        cellSize: 2,
+        margin: 0,
+        scalable: true
+      });
+    } else {
+      console.error('No se cargó la librería QR');
+    }
+  });
+}
+
+/* ------------------------ VACIAR CARRITO ------------------------------- */
+clearCartBtn.addEventListener('click', () => {
+  if (cart.length === 0) return;
+  if (!confirm('¿Está seguro que desea vaciar el carrito?')) return;
+
+  cart = [];
+  saveCart();
+  updateCart();
+});
+
+/* ------------------------- IMPRIMIR ------------------------------------ */
+printBtn.addEventListener('click', () => {
+  generateLabels();            // asegurar etiquetas listas
+  setTimeout(() => window.print(), 100);
+});
+
+/* -------------------------- BÚSQUEDA ----------------------------------- */
+window.buscar = () => {
+  const query = document.getElementById('searchInput').value.trim();
+  if (query.length < 2) {
+    alert('Por favor ingrese al menos 2 caracteres para buscar');
+    return;
+  }
+  window.location.search = `?q=${encodeURIComponent(query)}`;
+};
+
+/* ----------------------- INICIALIZACIÓN ------------------------------- */
+document.addEventListener('DOMContentLoaded', () => {
+  loadCart();
+  const params = new URLSearchParams(window.location.search);
+  const query  = params.get('q');
+  if (query) document.getElementById('searchInput').value = query;
+  
+  // Efecto de carga inicial
+  document.querySelectorAll('.fade-in').forEach(el => {
+    el.style.opacity = '0';
+  });
+  
+  setTimeout(() => {
+    document.querySelectorAll('.fade-in').forEach(el => {
+      el.style.transition = 'opacity 0.3s ease-out';
+      el.style.opacity = '1';
+    });
+  }, 100);
+});
+</script>
+</body>
+</html>

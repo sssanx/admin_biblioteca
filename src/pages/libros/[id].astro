@@ -72,11 +72,11 @@ if (Astro.request.method === 'POST') {
   try {
     if (action === 'agregar_ejemplar') {
       const numeroEjemplar = parseInt(form.get('nuevo_numero_ejemplar'));
-      const codigoBarras = form.get('nuevo_codigo');
+      const codigoBarras = form.get('nuevo_codigo') || `LIB-${id}-${Date.now().toString().slice(-6)}`;
       const numeroAdquisicion = form.get('nuevo_numero_adquisicion');
       const ubicacion = form.get('nuevo_ubicacion');
 
-      if (!codigoBarras || !ubicacion || isNaN(numeroEjemplar)) {
+      if (!ubicacion || isNaN(numeroEjemplar)) {
         throw new Error('Datos incompletos para agregar ejemplar');
       }
 
@@ -130,7 +130,7 @@ if (Astro.request.method === 'POST') {
 
   } catch (err) {
     console.error('Error en acción POST:', err);
-    return Astro.redirect(vb
+    return Astro.redirect(
       `/libros/etiquetas/${id}?error=${encodeURIComponent(err.message)}`
     );
   }
@@ -363,12 +363,12 @@ if (Astro.request.method === 'POST') {
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                 </svg>
-                Código de Barras *
+                Código de Barras
               </label>
               <input 
                 type="text" 
                 name="nuevo_codigo" 
-                required
+                value={`LIB-${id}-${Date.now().toString().slice(-6)}`}
                 class="w-full pl-10 pr-3 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-[#1B396A] focus:border-[#1B396A] transition"
               />
             </div>
@@ -428,6 +428,14 @@ if (Astro.request.method === 'POST') {
           url.searchParams.delete('success');
           url.searchParams.delete('error');
           window.history.replaceState({}, '', url.toString());
+        }
+        
+        // Generar código de barras automático si el campo está vacío
+        const codigoBarrasInput = document.querySelector('input[name="nuevo_codigo"]');
+        if (codigoBarrasInput && !codigoBarrasInput.value) {
+          const libroId = {id};
+          const timestamp = Date.now().toString().slice(-6);
+          codigoBarrasInput.value = `LIB-${libroId}-${timestamp}`;
         }
       });
     </script>

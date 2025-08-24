@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Etiquetas - Biblioteca</title>
+    <style>
+        /* =====================================================
+           PALETA Y VARIABLES
+        ===================================================== */
+        :root {
+            --color-primary:         #1B396A;
+            --color-primary-dark:    #142a51;
+            --color-primary-light:   #2a4a8a;
+            --color-success:         #4CAF50;
+            --color-success-dark:    #3d8b40;
+            --color-danger:         #E74C3C;
+            --color-danger-dark:     #c0392b;
+            --color-warning:         #F39C12;
+            --color-info:            #3498DB;
+            --color-light:           #F8F9FA;
+            --color-dark:            #2C3E50;
+            --color-gray:            #95A5A6;
+            --color-gray-light:      #ECF0F1;
+            --color-border:          #DEE2E6;
+        }
+
+        /* =====================================================
+           BASE / LAYOUT
+        ===================================================== */
+        body {
+            font-family: 'Segoe UI','Roboto','Helvetica Neue',Arial,sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: var(--color-light);
+            color: var(--color-dark);
+            line-height: 1.6;
+        }
+
+        .container { 
+            max-width: 1200px; 
+            margin: 0 auto; 
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        header {
+            background: var(--color-primary);
+            color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,.1);
+        }
+
+        h1, h2 { margin: 0; }
+        h1 { 
+            font-size: 1.8rem; 
+            margin-bottom: 5px; 
+        }
+        h2 {
+            font-size: 1.4rem; 
+            color: var(--color-primary);
+            margin-bottom: 20px; 
+            padding-bottom: 10px;
+            border-bottom: 2px solid var(--color-gray-light);
+        }
+
+        /* =====================================================
+           FORMULARIO DE BÚSQUEDA
+        ===================================================== */
+        .search-container {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,.05);
+            margin-bottom: 20px;
+            border: 1px solid var(--color-border);
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: var(--color-dark);
+        }
+
+        input, select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 2px solid var(--color-border);
+            border-radius: 6px;
+            box-sizing: border-box;
+            font-size: 1rem;
+            transition: all 0.3s;
+        }
+
+        input:focus, select:focus {
+            border-color: var(--color-primary);
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(27,57,106,.1);
+        }
+
+        /* =====================================================
+           BOTONES
+        ===================================================== */
+        .btn {
+            padding: 10px 18px;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: var(--color-primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--color-primary-dark);
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary {
+            background: var(--color-info);
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #2980b9;
+            transform: translateY(-1px);
+        }
+
+        .btn-danger {
+            background: var(--color-danger);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: var(--color-danger-dark);
+            transform: translateY(-1px);
+        }
+
+        /* =====================================================
+           VISTA PREVIA DE ETIQUETA
+        ===================================================== */
+        .label-preview-container {
+            margin: 25px 0;
+            text-align: center;
+        }
+
+        .label-preview {
+            width: 65mm;
+            height: 35mm;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            padding: 0;
+            margin: 0 auto;
+            background: white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            font-family: Arial, sans-serif;
+            display: grid;
+            grid-template-rows: 7mm 1fr auto;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .label-header {
+            background: var(--color-primary);
+            color: white;
+            padding: 1mm;
+            font-size: 7pt;
+            font-weight: bold;
+            text-align: center;
+            text-transform: uppercase;
+        }
+
+        .book-title {
+            font-size: 10pt;
+            font-weight: bold;
+            text-align: center;
+            padding: 2mm;
+            line-height: 1.2;
+            max-height: 14mm;
+            overflow: hidden;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+        }
+
+        .book-author {
+            font-size: 8pt;
+            text-align: center;
+            font-style: italic;
+            color: #555;
+            padding: 0 2mm;
+        }
+
+        .book-details {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            padding: 1mm 3mm;
+            gap: 3mm;
+        }
+
+        .detail-row {
+            display: flex;
+            margin-bottom: 1mm;
+            font-size: 8pt;
+        }
+
+        .detail-label {
+            font-weight: bold;
+            min-width: 20mm;
+            color: var(--color-primary);
+        }
+
+        .book-code {
+            text-align: center;
+            font-family: 'Courier New', monospace;
+            font-size: 9pt;
+            font-weight: bold;
+            color: var(--color-primary);
+            margin: 1mm 0;
+        }
+
+        .barcode {
+            height: 15mm;
+            width: 100%;
+            margin: 0 auto;
+        }
+
+        .footer {
+            background: #f5f5f5;
+            padding: 1mm 3mm;
+            font-size: 7pt;
+            text-align: center;
+            border-top: 1px dashed #ddd;
+        }
+
+        /* =====================================================
+           TABLA DE ETIQUETAS
+        ===================================================== */
+        .table-responsive {
+            overflow-x: auto;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            border: 1px solid var(--color-border);
+            box-shadow: 0 2px 10px rgba(0,0,0,.05);
+        }
+
+        .labels-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+        }
+
+        .labels-table th, .labels-table td {
+            border: 1px solid var(--color-border);
+            padding: 12px 15px;
+            text-align: left;
+        }
+
+        .labels-table th {
+            background: var(--color-primary);
+            color: white;
+            font-weight: 600;
+        }
+
+        .labels-table tr:hover {
+            background: rgba(27,57,106,.03);
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 8px;
+        }
+
+        /* =====================================================
+           ESTADOS Y MENSAJES
+        ===================================================== */
+        .hidden {
+            display: none;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 18px;
+            height: 18px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+            margin-left: 10px;
+        }
+
+        .error-message {
+            color: var(--color-danger);
+            padding: 12px;
+            border: 1px solid #ef9a9a;
+            background: #ffebee;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-size: 0.9rem;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Sistema de Etiquetas para Biblioteca</h1>
+        </header>
+        
+        <div class="search-container">
+            <h2>Buscar Libro</h2>
+            
+            <div class="form-group">
+                <label for="busqueda">Buscar por ISBN o código de barras</label>
+                <input type="text" id="busqueda" placeholder="Ej: 9788478884456 o código de barras">
+            </div>
+            
+            <button id="btn-buscar" class="btn btn-primary">
+                Buscar Libro
+                <span id="loading-indicator" class="loading hidden"></span>
+            </button>
+            
+            <div id="resultados-busqueda" class="hidden">
+                <h3>Resultados:</h3>
+                <div id="lista-resultados" style="margin-top: 10px;"></div>
+            </div>
+        </div>
+        
+        <div id="vista-previa" class="label-preview-container hidden">
+            <h2>Vista Previa de Etiqueta</h2>
+            <div class="label-preview">
+                <div class="label-header">Biblioteca Escolar</div>
+                <div>
+                    <div class="book-title" id="preview-titulo"></div>
+                    <div class="book-author" id="preview-autor"></div>
+                </div>
+                <div class="book-details">
+                    <div style="grid-column: span 2;">
+                        <div class="book-code">
+                            <span id="preview-codigo"></span>
+                            <svg class="barcode" id="preview-barcode"></svg>
+                        </div>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">ISBN:</span>
+                        <span class="detail-value" id="preview-isbn"></span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Ubicación:</span>
+                        <span class="detail-value" id="preview-ubicacion"></span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Ejemplar:</span>
+                        <span class="detail-value" id="preview-ejemplar"></span>
+                    </div>
+                </div>
+                <div class="footer">
+                    © <span id="preview-year"></span> Biblioteca Escolar
+                </div>
+            </div>
+            
+            <div class="form-group" style="margin-top: 20px;">
+                <label for="ubicacion">Ubicación física</label>
+                <input type="text" id="ubicacion" placeholder="Ej: Estante 2, Fila 1">
+            </div>
+            
+            <div class="form-group">
+                <label for="ejemplar">Número de ejemplar</label>
+                <input type="text" id="ejemplar" placeholder="Ej: 1" value="1">
+            </div>
+            
+            <button id="btn-agregar" class="btn btn-primary">Agregar Etiqueta a la Lista</button>
+        </div>
+        
+        <h2>Etiquetas para Imprimir</h2>
+        <div class="table-responsive">
+            <table class="labels-table">
+                <thead>
+                    <tr>
+                        <th>Título</th>
+                        <th>Autor</th>
+                        <th>ISBN</th>
+                        <th>Código</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody id="tabla-etiquetas">
+                    <!-- Las etiquetas se agregarán aquí dinámicamente -->
+                </tbody>
+            </table>
+        </div>
+        
+        <div style="margin-top: 20px; text-align: center;">
+            <button id="btn-imprimir-todas" class="btn btn-secondary">Imprimir Todas las Etiquetas</button>
+            <button id="btn-limpiar-lista" class="btn btn-danger">Limpiar Lista</button>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+    <script>
+        // Array para almacenar las etiquetas
+        let etiquetas = [];
+        let libroActual = null;
+        
+        // Elementos del DOM
+        const elementos = {
+            busqueda: document.getElementById('busqueda'),
+            btnBuscar: document.getElementById('btn-buscar'),
+            loading: document.getElementById('loading-indicator'),
+            resultados: document.getElementById('resultados-busqueda'),
+            listaResultados: document.getElementById('lista-resultados'),
+            vistaPrevia: document.getElementById('vista-previa'),
+            btnAgregar: document.getElementById('btn-agregar'),
+            tablaEtiquetas: document.getElementById('tabla-etiquetas'),
+            btnImprimirTodas: document.getElementById('btn-imprimir-todas'),
+            btnLimpiarLista: document.getElementById('btn-limpiar-lista'),
+            
+            // Elementos de vista previa
+            previewTitulo: document.getElementById('preview-titulo'),
+            previewAutor: document.getElementById('preview-autor'),
+            previewCodigo: document.getElementById('preview-codigo'),
+            previewIsbn: document.getElementById('preview-isbn'),
+            previewUbicacion: document.getElementById('preview-ubicacion'),
+            previewEjemplar: document.getElementById('preview-ejemplar'),
+            previewYear: document.getElementById('preview-year'),
+            previewBarcode: document.getElementById('preview-barcode'),
+            
+            // Campos del formulario
+            ubicacion: document.getElementById('ubicacion'),
+            ejemplar: document.getElementById('ejemplar')
+        };
+        
+        // Inicialización
+        function init() {
+            // Año actual para el footer
+            elementos.previewYear.textContent = new Date().getFullYear();
+            
+            // Event listeners
+            elementos.btnBuscar.addEventListener('click', buscarLibro);
+            elementos.busqueda.addEventListener('keyup', function(e) {
+                if (e.key === 'Enter') buscarLibro();
+            });
+            
+            elementos.btnAgregar.addEventListener('click', agregarEtiqueta);
+            elementos.btnImprimirTodas.addEventListener('click', imprimirTodasEtiquetas);
+            elementos.btnLimpiarLista.addEventListener('click', limpiarLista);
+            
+            // Cargar etiquetas guardadas (si las hay)
+            cargarEtiquetasGuardadas();
+        }
+        
+        // Función para buscar libros via API
+        async function buscarLibro() {
+            const codigo = elementos.busqueda.value.trim();
+            if (!codigo) {
+                mostrarError('Por favor ingrese un ISBN o código de barras');
+                return;
+            }
+            
+            // Estado de carga
+            toggleLoading(true);
+            resetBusqueda();
+            
+            try {
+                const response = await fetch('/api/buscar-libro', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({ codigo })
+                });
+                
+                // Verificar tipo de respuesta
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    const text = await response.text();
+                    throw new Error('El servidor respondió con un formato inesperado');
+                }
+                
+                const data = await response.json();
+                
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || 'Error en la búsqueda');
+                }
+                
+                if (!data.data) {
+                    throw new Error('No se encontraron datos del libro');
+                }
+                
+                mostrarLibro(data.data);
+                
+            } catch (error) {
+                console.error('Error al buscar libro:', error);
+                mostrarError(error.message);
+            } finally {
+                toggleLoading(false);
+            }
+        }
+        
+        // Función para mostrar el libro encontrado
+        function mostrarLibro(libro) {
+            elementos.previewTitulo.textContent = libro.titulo || 'Título no disponible';
+            elementos.previewAutor.textContent = libro.autor || 'Autor no disponible';
+            elementos.previewIsbn.textContent = libro.isbn || 'No disponible';
+            
+            // Generar código de barras único
+            const codigoBarras = libro.isbn ? `LIB-${libro.isbn}` : `LIB-${libro.id || Date.now()}`;
+            elementos.previewCodigo.textContent = codigoBarras;
+            
+            // Generar código de barras visual
+            JsBarcode(elementos.previewBarcode, codigoBarras, {
+                format: "CODE128",
+                lineColor: "#000",
+                width: 1.5,
+                height: 50,
+                displayValue: false
+            });
+            
+            // Guardar datos del libro
+            libroActual = {
+                ...libro,
+                codigo: codigoBarras
+            };
+            
+            // Mostrar vista previa
+            elementos.vistaPrevia.classList.remove('hidden');
+            elementos.resultados.classList.add('hidden');
+        }
+        
+        // Función para agregar etiqueta a la lista
+        function agregarEtiqueta() {
+            if (!libroActual) {
+                mostrarError('No hay ningún libro seleccionado');
+                return;
+            }
+            
+            const ubicacion = elementos.ubicacion.value.trim();
+            const ejemplar = elementos.ejemplar.value.trim();
+            
+            if (!ubicacion) {
+                mostrarError('Por favor ingrese la ubicación física');
+                return;
+            }
+            
+            const nuevaEtiqueta = {
+                id: Date.now(),
+                titulo: libroActual.titulo,
+                autor: libroActual.autor,
+                isbn: libroActual.isbn || 'No disponible',
+                codigo: libroActual.codigo,
+                ubicacion: ubicacion,
+                ejemplar: ejemplar || '1'
+            };
+            
+            etiquetas.push(nuevaEtiqueta);
+            guardarEtiquetas();
+            actualizarTabla();
+            resetFormulario();
+        }
+        
+        // Función para actualizar la tabla de etiquetas
+        function actualizarTabla() {
+            elementos.tablaEtiquetas.innerHTML = '';
+            
+            etiquetas.forEach(etiqueta => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${etiqueta.titulo}</td>
+                    <td>${etiqueta.autor}</td>
+                    <td>${etiqueta.isbn}</td>
+                    <td>${etiqueta.codigo}</td>
+                    <td class="action-buttons">
+                        <button class="btn btn-secondary" data-id="${etiqueta.id}">Imprimir</button>
+                        <button class="btn btn-danger" data-id="${etiqueta.id}">Eliminar</button>
+                    </td>
+                `;
+                elementos.tablaEtiquetas.appendChild(tr);
+            });
+            
+            // Asignar eventos a los botones
+            asignarEventosBotones();
+        }
+        
+        // Función para imprimir todas las etiquetas
+        function imprimirTodasEtiquetas() {
+            if (etiquetas.length === 0) {
+                mostrarError('No hay etiquetas para imprimir');
+                return;
+            }
+            
+            // Guardar las etiquetas en sessionStorage para pasarlas a la página de impresión
+            sessionStorage.setItem('etiquetasParaImprimir', JSON.stringify(etiquetas));
+            
+            // Redirigir a la página de impresión
+            window.location.href = '/imprimir';
+        }
+        
+        // Función para cargar etiquetas guardadas
+        function cargarEtiquetasGuardadas() {
+            const etiquetasGuardadas = localStorage.getItem('etiquetasBiblioteca');
+            if (etiquetasGuardadas) {
+                etiquetas = JSON.parse(etiquetasGuardadas);
+                actualizarTabla();
+            }
+        }
+        
+        // Función para guardar etiquetas en localStorage
+        function guardarEtiquetas() {
+            localStorage.setItem('etiquetasBiblioteca', JSON.stringify(etiquetas));
+        }
+        
+        // Funciones auxiliares
+        function toggleLoading(mostrar) {
+            elementos.loading.classList.toggle('hidden', !mostrar);
+            elementos.btnBuscar.disabled = mostrar;
+        }
+        
+        function resetBusqueda() {
+            elementos.resultados.classList.add('hidden');
+            elementos.vistaPrevia.classList.add('hidden');
+            elementos.listaResultados.innerHTML = '';
+        }
+        
+        function resetFormulario() {
+            elementos.ubicacion.value = '';
+            elementos.ejemplar.value = '1';
+            elementos.vistaPrevia.classList.add('hidden');
+            elementos.busqueda.value = '';
+            libroActual = null;
+        }
+        
+        function mostrarError(mensaje) {
+            elementos.listaResultados.innerHTML = `
+                <div class="error-message">
+                    <strong>Error:</strong> ${mensaje}
+                </div>
+            `;
+            elementos.resultados.classList.remove('hidden');
+        }
+        
+        function asignarEventosBotones() {
+            document.querySelectorAll('.btn-secondary').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const id = parseInt(this.getAttribute('data-id'));
+                    imprimirEtiquetaIndividual(id);
+                });
+            });
+            
+            document.querySelectorAll('.btn-danger').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const id = parseInt(this.getAttribute('data-id'));
+                    eliminarEtiqueta(id);
+                });
+            });
+        }
+        
+        // Función para imprimir una etiqueta individual
+        function imprimirEtiquetaIndividual(id) {
+            const etiqueta = etiquetas.find(e => e.id === id);
+            if (!etiqueta) return;
+            
+            // Guardar la etiqueta individual en sessionStorage
+            sessionStorage.setItem('etiquetasParaImprimir', JSON.stringify([etiqueta]));
+            
+            // Redirigir a la página de impresión
+            window.location.href = '/imprimir';
+        }
+        
+        function eliminarEtiqueta(id) {
+            if (confirm('¿Está seguro que desea eliminar esta etiqueta?')) {
+                etiquetas = etiquetas.filter(etiqueta => etiqueta.id !== id);
+                guardarEtiquetas();
+                actualizarTabla();
+            }
+        }
+        
+        function limpiarLista() {
+            if (etiquetas.length === 0) {
+                mostrarError('No hay etiquetas para eliminar');
+                return;
+            }
+            
+            if (confirm('¿Está seguro que desea eliminar todas las etiquetas?')) {
+                etiquetas = [];
+                guardarEtiquetas();
+                actualizarTabla();
+            }
+        }
+        
+        // Inicializar la aplicación
+        init();
+    </script>
+</body>
+</html>

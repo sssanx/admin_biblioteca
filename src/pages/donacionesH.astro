@@ -1,0 +1,230 @@
+---
+import db from '../lib/db';
+import AdminLayout from '../layouts/AdminLayout.astro';
+
+const donanteId = Astro.url.searchParams.get('donante_id');
+let donante = null;
+let donaciones = [];
+
+if (donanteId) {
+  donante = (await db.query('SELECT * FROM donantes WHERE id = $1', [donanteId])).rows[0];
+  donaciones = (await db.query(`
+    SELECT d.*, 
+      COUNT(i.id) as total_items,
+      SUM(COALESCE(l.valor_estimado, 0)) as valor_total
+    FROM donaciones d
+    LEFT JOIN items_donacion i ON d.id = i.donacion_id
+    LEFT JOIN libros l ON i.libro_id = l.id
+    WHERE d.donante_id = $1
+    GROUP BY d.id
+    ORDER BY d.fecha_registro DESC
+  `, [donanteId])).rows;
+}
+---
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Donaciones</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+  <AdminLayout title={donante ? `Donaciones de ${donante.nombre}` : 'Donaciones'}>
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex flex-col md:flex-row md:items-center md:justify-between mb-8">
+        <div>
+          <h1 class="text-2xl font-bold text-gray-900 flex items-center">
+            <i class="fas fa-book text-indigo-600 mr-3"></i>
+            {donante ? `Donaciones de ${donante.nombre}` : 'Todas las Donaciones'}
+          </h1>
+          {donante && (
+            <p class="mt-1 text-sm text-gray-500">
+              <i class="fas fa-phone-alt mr-1"></i> {donante.telefono || 'No registrado'} | 
+              <i class="fas fa-envelope ml-2 mr-1"></i> {donante.email || 'No registrado'}
+            </p>
+          )}
+        </div>
+        <div class="mt-4 md:mt-0">
+          <a href="/donaciones/nueva" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 mr-3">
+            <i class="fas fa-plus mr-2"></i>
+            Nueva Donación
+          </a>
+          <a href="/donantes" class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50">
+            <i class="fas fa-users mr-2"></i>
+            Ver Donantes
+          </a>
+        </div>
+      </div>
+
+      <!-- Resumen -->
+      {donante && (
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <div class="bg-white p-6 rounded-lg shadow">
+            <div class="flex items-center">
+              <div class="p-3 rounded-full bg-indigo-100 text-indigo-600 mr-4">
+                <i class="fas fa-gift fa-lg"></i>
+              </div>
+              <div>
+                <p class="text-sm font-medium text-gray-500">Total Donaciones</p>
+                <p class="text-2xl font-semibold text-gray-900">{donaciones.length}</p>
+              </div>
+            </div>
+          </div>
+          <div class="bg-white p-6 rounded-lg shadow">
+            <div class="flex items-center">
+              <div class="p-3 rounded-full bg-green-100 text-green-600 mr-4">
+                <i class="fas fa-book-open fa-lg"></i>
+              </div>
+              <div>
+                <p class="text-sm font-medium text-gray-500">Materiales Donados</p>
+                <p class="text-2xl font-semibold text-gray-900">
+                  {donaciones.reduce((sum, d) => sum + parseInt(d.total_items), 0)}
+                </p>
+              </div>
+            </div>
+          </div>
+          <div class="bg-white p-6 rounded-lg shadow">
+            <div class="flex items-center">
+              <div class="p-3 rounded-full bg-blue-100 text-blue-600 mr-4">
+                <i class="fas fa-dollar-sign fa-lg"></i>
+              </div>
+              <div>
+                <p class="text-sm font-medium text-gray-500">Valor Total Donado</p>
+                <p class="text-2xl font-semibold text-gray-900">
+                  ${donaciones.reduce((sum, d) => sum + parseFloat(d.valor_total), 0).toFixed(2)}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <!-- Tabla de donaciones -->
+      <div class="bg-white shadow rounded-lg overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+          <h2 class="text-lg font-medium text-gray-900">
+            <i class="fas fa-list-ul mr-2 text-indigo-600"></i>
+            Historial de Donaciones
+          </h2>
+          <div class="relative">
+            <input type="text" placeholder="Buscar donación..." 
+              class="pl-10 pr-4 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+            <i class="fas fa-search absolute left-3 top-3 text-gray-400"></i>
+          </div>
+        </div>
+        
+        <div class="overflow-x-auto">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                {!donante && (
+                  <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Donante
+                  </th>
+                )}
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Fecha
+                </th>
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Tipo
+                </th>
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Estado
+                </th>
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Materiales
+                </th>
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Valor
+                </th>
+                <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Acciones
+                </th>
+              </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+              {donaciones.map(donacion => (
+                <tr class="hover:bg-gray-50">
+                  {!donante && (
+                    <td class="px-6 py-4 whitespace-nowrap">
+                      <div class="text-sm font-medium text-gray-900">
+                        <a href={`/donaciones?donante_id=${donacion.donante_id}`} class="text-indigo-600 hover:text-indigo-900">
+                          {/* Nombre del donante se cargaría con un JOIN en la consulta SQL */}
+                          Donante #{donacion.donante_id}
+                        </a>
+                      </div>
+                    </td>
+                  )}
+                  <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="text-sm text-gray-900">
+                      {new Date(donacion.fecha_registro).toLocaleDateString()}
+                    </div>
+                    <div class="text-sm text-gray-500">
+                      {new Date(donacion.fecha_registro).toLocaleTimeString()}
+                    </div>
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="text-sm text-gray-900">{donacion.tipo_material}</div>
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap">
+                    <span class={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
+                      ${donacion.estado === 'Aceptado' ? 'bg-green-100 text-green-800' : 
+                        donacion.estado === 'Recibido' ? 'bg-blue-100 text-blue-800' : 
+                        'bg-yellow-100 text-yellow-800'}`}>
+                      {donacion.estado}
+                    </span>
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {donacion.total_items}
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    ${parseFloat(donacion.valor_total).toFixed(2)}
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                    <a href={`/donaciones/${donacion.id}`} class="text-indigo-600 hover:text-indigo-900 mr-3">
+                      <i class="fas fa-eye mr-1"></i> Detalles
+                    </a>
+                    <a href="#" class="text-gray-600 hover:text-gray-900">
+                      <i class="fas fa-edit mr-1"></i> Editar
+                    </a>
+                  </td>
+                </tr>
+              ))}
+              {donaciones.length === 0 && (
+                <tr>
+                  <td colspan={donante ? 6 : 7} class="px-6 py-4 text-center text-sm text-gray-500">
+                    No se encontraron donaciones {donante ? 'para este donante' : ''}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Paginación -->
+        <div class="bg-white px-6 py-3 border-t border-gray-200">
+          <div class="flex items-center justify-between">
+            <div class="text-sm text-gray-500">
+              Mostrando <span class="font-medium">1</span> a <span class="font-medium">{donaciones.length}</span> de <span class="font-medium">{donaciones.length}</span> resultados
+            </div>
+            <div class="flex space-x-2">
+              <button class="px-3 py-1 border rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+                Anterior
+              </button>
+              <button class="px-3 py-1 border rounded-md text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700">
+                1
+              </button>
+              <button class="px-3 py-1 border rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+                Siguiente
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </AdminLayout>
+</body>
+</html>

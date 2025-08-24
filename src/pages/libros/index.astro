@@ -2,7 +2,8 @@
 export const prerender = false;
 
 import AdminLayout from '../../layouts/AdminLayout.astro';
-import db from '../../lib/db.js';
+import { db } from '../../lib/db.js';
+console.log('DB ES:', db);
 
 const result = await db.query('SELECT * FROM libros ORDER BY id DESC');
 const libros = result.rows;

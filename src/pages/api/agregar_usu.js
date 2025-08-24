@@ -3,29 +3,32 @@ import { query } from '../../lib/db';
 export async function POST({ request }) {
   try {
     const formData = await request.formData();
-    
+
     // Obtener valores del formulario
     const vigenciaIndefinida = formData.get('vigencia_indefinida') === 'on';
     const fechaVigencia = formData.get('vigencia');
+    const genero = formData.get('genero') || null;
+    const idCuatrimestre = formData.get('id_cuatrimestre') || null;  // ✅ Nombre corregido
 
-    // Validación según la restricción CHECK
     if (!vigenciaIndefinida && !fechaVigencia) {
       throw new Error('Debes especificar una fecha de vigencia cuando no es indefinida');
     }
 
-    // Preparar datos para la inserción según la estructura real
+    // Preparar los datos para insertar
     const userData = {
       nombre: formData.get('nombre'),
       correo: formData.get('correo'),
       rol: formData.get('rol'),
       matricula: formData.get('matricula'),
       carrera_id: formData.get('carrera_id') || null,
-      id_cuatrimestre: formData.get('cuatrimestres') || null, // Usando el nombre correcto de columna
+      id_cuatrimestre: idCuatrimestre,
       vigencia: vigenciaIndefinida ? null : fechaVigencia,
-      vigencia_indefinida: vigenciaIndefinida
+      vigencia_indefinida: vigenciaIndefinida,
+      genero: genero
     };
 
-    // Consulta SQL actualizada
+    console.log('📥 Datos recibidos del formulario:', userData); // 🔍 Debug
+
     const sql = `
       INSERT INTO usuarios (
         nombre, 
@@ -35,10 +38,12 @@ export async function POST({ request }) {
         carrera_id, 
         id_cuatrimestre,
         vigencia,
-        vigencia_indefinida
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      RETURNING *`;
-    
+        vigencia_indefinida,
+        genero
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      RETURNING *
+    `;
+
     const params = [
       userData.nombre,
       userData.correo,
@@ -47,11 +52,12 @@ export async function POST({ request }) {
       userData.carrera_id,
       userData.id_cuatrimestre,
       userData.vigencia,
-      userData.vigencia_indefinida
+      userData.vigencia_indefinida,
+      userData.genero
     ];
 
     const result = await query(sql, params);
-    
+
     return new Response(JSON.stringify(result.rows[0]), {
       status: 200,
       headers: {
@@ -60,15 +66,15 @@ export async function POST({ request }) {
     });
 
   } catch (error) {
-    console.error('Error al agregar usuario:', error);
-    
+    console.error('❌ Error al agregar usuario:', error);
+
     let errorMessage = 'Error al agregar usuario';
     if (error.constraint === 'chk_vigencia_coherente') {
       errorMessage = 'Los datos de vigencia no son coherentes. Debe ser indefinida o tener fecha.';
     } else if (error.message.includes('fecha de vigencia')) {
       errorMessage = error.message;
     }
-    
+
     return new Response(JSON.stringify({ 
       error: errorMessage,
       details: process.env.NODE_ENV === 'development' ? error.message : undefined

@@ -1,6 +1,7 @@
 ---
 import AdminLayout from '../layouts/AdminLayout.astro';
-import db from '../lib/db.js';
+// ✅ Esto es correcto
+import { db } from '../lib/db.js';
 
 const [
   { rows: [{ total_libros }] },
@@ -25,7 +26,7 @@ const [
 ---
 
 <AdminLayout title="Inicio del Panel">
-  <div class="mx-auto px-4 py-6 max-w-7xl">
+  <div class="mx-auto px-4 py-6 max-w-7xl overflow-x-auto overflow-y-auto h-screen">
     <!-- Header with date - Mejorado visualmente -->
     <div class="flex justify-between items-center mb-8 animate-fade-in">
       <h1 class="text-3xl font-bold text-gray-800 bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600">
@@ -128,7 +129,7 @@ const [
           </svg>
           Últimos préstamos
         </h3>
-        <a href="/prestamos" class="text-sm text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1 transition-colors">
+        <a href="/libros/prestamos" class="text-sm text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1 transition-colors">
           Ver todos
           <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />

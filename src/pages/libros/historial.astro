@@ -37,13 +37,6 @@ const { rows: historial } = await db.query(`
     <div class="flex justify-between items-center mb-6 flex-wrap gap-4">
       <h1 class="text-3xl font-bold">Historial de Préstamos</h1>
 
-      <div class="flex gap-3 flex-wrap">
-        <select id="filtro" class="border rounded-lg px-3 py-2 text-sm shadow-sm">
-          <option value="">Todo</option>
-          <option value="semana" selected={filtro === "semana"}>Última semana</option>
-          <option value="mes" selected={filtro === "mes"}>Último mes</option>
-        </select>
-
         <button
           id="vaciarHistorialBtn"
           class="bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-2 rounded-lg shadow transition"
@@ -100,11 +93,7 @@ const { rows: historial } = await db.query(`
   </div>
 
   <script type="module">
-    document.querySelector('#filtro')?.addEventListener('change', e => {
-      const filtro = e.target.value;
-      window.location.search = filtro ? `?filtro=${filtro}` : '';
-    });
-
+    
     document.querySelector('#descargarPdfBtn')?.addEventListener('click', async () => {
       try {
         const filtro = document.querySelector('#filtro')?.value;

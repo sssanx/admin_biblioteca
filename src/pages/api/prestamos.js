@@ -1,7 +1,7 @@
 // src/pages/api/prestamos.js
 export const prerender = false;
 
-import db from '../../lib/db.js';           // ajusta la ruta si es distinta
+import { db } from '../../lib/db.js';  // Importación corregida
 
 export async function POST({ request }) {
   const client = await db.connect();
@@ -9,21 +9,20 @@ export async function POST({ request }) {
   try {
     /* ────────────────── 1. Datos del formulario ────────────────── */
     const form       = await request.formData();
-    const libroId    = Number(form.get('libro_id'));     // <─ nombres tal cual vienen del form
+    const libroId    = Number(form.get('libro_id'));
     const usuarioId  = Number(form.get('usuario_id'));
-    const dias       = Number(form.get('duracion'));     // 7, 14, 21, 30 …
+    const dias       = Number(form.get('duracion'));
 
     if (!libroId || !usuarioId || !dias || dias < 1) {
       return jsonError('Datos incompletos o inválidos', 400);
     }
 
     /* ────────────────── 2. Buscar ejemplar disponible ──────────── */
-    // Usamos FOR UPDATE SKIP LOCKED para evitar “carrera”
     const { rows: ejDisp } = await client.query(
       `SELECT id
          FROM ejemplares
         WHERE libro_id = $1
-          AND estado   = 'disponible'
+          AND estado = 'disponible'
         FOR UPDATE SKIP LOCKED
         LIMIT 1`,
       [libroId]

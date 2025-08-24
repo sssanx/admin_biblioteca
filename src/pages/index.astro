@@ -557,24 +557,42 @@
     });
     
     // Form submission handling with animation
-    document.getElementById('loginForm').addEventListener('submit', function(e) {
-      e.preventDefault();
-      const submitBtn = this.querySelector('button[type="submit"]');
-      
-      // Add loading animation
-      submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Ingresando...';
-      submitBtn.disabled = true;
-      
-      // Simulate API call
-      setTimeout(() => {
-        submitBtn.innerHTML = '<i class="fas fa-check"></i> Acceso concedido';
-        
-        // Redirect after success (simulated)
-        setTimeout(() => {
-          window.location.href = '/home';
-        }, 1000);
-      }, 1500);
+ document.getElementById('loginForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  
+  const email = document.getElementById('email').value;
+  const password = document.getElementById('password').value;
+  const submitBtn = this.querySelector('button[type="submit"]');
+  
+  // Mostrar estado de carga
+  submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verificando...';
+  submitBtn.disabled = true;
+
+  try {
+    const response = await fetch('/api/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ email, password })
     });
+
+    if (response.ok) {
+      // Redirigir si el login es exitoso
+      window.location.href = '/home';
+    } else {
+      const errorData = await response.json();
+      alert(`Error: ${errorData.error}\n${errorData.message}`);
+      submitBtn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Iniciar Sesión';
+      submitBtn.disabled = false;
+    }
+  } catch (error) {
+    console.error('Error:', error);
+    alert('Error al conectar con el servidor');
+    submitBtn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Iniciar Sesión';
+    submitBtn.disabled = false;
+  }
+});
   </script>
 </body>
 </html>

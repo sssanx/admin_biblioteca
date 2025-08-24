@@ -1,8 +1,8 @@
 ---
 // src/pages/prestamos/[id].astro
 
-import db from '../../lib/db.js';
-import AdminLayout from '../../layouts/AdminLayout.astro';
+import { db } from '../../lib/db.js';
+console.log('DB ES:', db);import AdminLayout from '../../layouts/AdminLayout.astro';
 
 const { id } = Astro.params;
 

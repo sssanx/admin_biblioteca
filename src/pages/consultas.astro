@@ -1,5 +1,7 @@
 ---
-import db from '../lib/db.js';
+import { db } from '../lib/db.js';
+console.log('DB ES:', db);
+
 import AdminLayout from '../layouts/AdminLayout.astro';
 
 const url = new URL(Astro.request.url);
@@ -26,12 +28,17 @@ if (q.length >= 2) {
     sugerencias = resSugerencias.rows;
   } else {
     const resSugerencias = await db.query(
-      `SELECT titulo, isbn FROM libros 
-       WHERE LOWER(titulo) LIKE LOWER($1) OR LOWER(isbn) LIKE LOWER($1)
+      `SELECT id, titulo, isbn FROM libros 
+       WHERE LOWER(titulo) LIKE LOWER($1) OR 
+             LOWER(isbn) LIKE LOWER($1) OR
+             LOWER('INT-' || id::text) LIKE LOWER($1)
        LIMIT 5`,
       [`%${q}%`]
     );
-    sugerencias = resSugerencias.rows;
+    sugerencias = resSugerencias.rows.map(row => ({
+      ...row,
+      displayIsbn: row.isbn ? row.isbn : `INT-${row.id}`
+    }));
   }
 }
 
@@ -80,7 +87,7 @@ if (tipo === 'usuarios') {
       l.titulo,
       l.autor,
       l.editorial,
-      l.isbn,
+      COALESCE(l.isbn, 'INT-' || l.id::text) AS isbn,
       l.clasificacion,
       l.anio_publicacion AS anio,
 
@@ -123,10 +130,13 @@ if (tipo === 'usuarios') {
   let whereClauses = [];
 
   if (q) {
-    whereClauses.push(`(LOWER(l.titulo) LIKE LOWER($${params.length + 1}) OR
-                       LOWER(l.autor) LIKE LOWER($${params.length + 1}) OR
-                       LOWER(l.isbn) LIKE LOWER($${params.length + 1}) OR
-                       LOWER(l.clasificacion) LIKE LOWER($${params.length + 1}))`);
+    whereClauses.push(`(
+      LOWER(l.titulo) LIKE LOWER($${params.length + 1}) OR
+      LOWER(l.autor) LIKE LOWER($${params.length + 1}) OR
+      LOWER(l.isbn) LIKE LOWER($${params.length + 1}) OR
+      LOWER('INT-' || l.id::text) LIKE LOWER($${params.length + 1}) OR
+      LOWER(l.clasificacion) LIKE LOWER($${params.length + 1})
+    )`);
     params.push(`%${q}%`);
   }
 
@@ -173,12 +183,11 @@ if (tipo === 'usuarios') {
 }
 
 total = resultados.length;
-
 ---
 
 <style>
   .main-container {
-    height: calc(100vh - 64px); /* Ajusta según la altura de tu header */
+    height: calc(100vh - 64px);
     overflow-y: auto;
     padding-bottom: 2rem;
   }
@@ -209,7 +218,7 @@ total = resultados.length;
                 name="q" 
                 value={q}
                 list="suggestions"
-                placeholder={tipo === 'usuarios' ? 'Nombre, matrícula o correo' : 'Título, autor o ISBN'}
+                placeholder={tipo === 'usuarios' ? 'Nombre, matrícula o correo' : 'Título, autor, ISBN o ID interno'}
                 class="w-full border border-gray-300 rounded-md px-3 py-2 pl-10 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
               <svg xmlns="http://www.w3.org/2000/svg" class="absolute left-3 top-2.5 h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -219,7 +228,7 @@ total = resultados.length;
             <datalist id="suggestions">
               {sugerencias.map(item => (
                 <option value={tipo === 'usuarios' ? item.nombre : item.titulo}>
-                  {tipo === 'usuarios' ? `Matrícula: ${item.matricula}` : `ISBN: ${item.isbn}`}
+                  {tipo === 'usuarios' ? `Matrícula: ${item.matricula}` : `ISBN/ID: ${item.displayIsbn || item.isbn || `INT-${item.id}`}`}
                 </option>
               ))}
             </datalist>
@@ -382,7 +391,7 @@ total = resultados.length;
                       <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
                       </svg>
-                      ISBN: {libro.isbn || 'No especificado'}
+                      {libro.isbn.startsWith('INT-') ? 'ID Interno' : 'ISBN'}: {libro.isbn || 'No especificado'}
                     </p>
                     <p class="flex items-center gap-2 text-gray-600">
                       <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -415,12 +424,6 @@ total = resultados.length;
                     </div>
                     
                     <div class="flex gap-2">
-                      <a 
-                        href={`/libros/detalle?id=${libro.id}`} 
-                        class="text-sm text-indigo-600 hover:text-indigo-800"
-                      >
-                        
-                      </a>
                       {libro.estado === 'disponible' && (
                         <a 
                           href={`/prestamos/nuevo?libro_id=${libro.id}`} 
@@ -436,7 +439,7 @@ total = resultados.length;
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
                         </svg>
-                      
+                        
                       </a>
                     </div>
                   </div>

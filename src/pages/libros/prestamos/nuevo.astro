@@ -3,7 +3,8 @@
 export const prerender = false;
 
 import AdminLayout from '../../../layouts/AdminLayout.astro';
-import db from '../../../lib/db.js';
+import { db } from '../../../lib/db.js';
+console.log('DB ES:', db);
 
 // Consulta de libros corregida (solo con campos existentes)
 const librosResult = await db.query(`
@@ -30,7 +31,7 @@ const librosResult = await db.query(`
   ORDER BY l.titulo
 `);
 
-// Consulta de usuarios corregida (sin referencia a p.estado y con multas pendientes ajustadas)
+// Consulta de usuarios actualizada para incluir semestre
 const usuariosQuery = await db.query(`
   SELECT 
     u.id,
@@ -40,21 +41,26 @@ const usuariosQuery = await db.query(`
     u.genero,
     u.vigencia,
     u.vigencia_indefinida,
-    u.semestre,
+    u.id_cuatrimestre AS semestre_id,
     c.nombre as carrera_nombre,
+    COALESCE(ct.nombre, u.id_cuatrimestre::text || '° Semestre') AS semestre_display,
     (SELECT COUNT(*) FROM prestamos p 
      WHERE p.usuario_id = u.id AND p.devuelto = false) AS prestamos_activos,
     (SELECT COALESCE(SUM(m.monto), 0) FROM multas m 
      WHERE m.usuario_id = u.id AND m.estado = 'pendiente') AS multas_pendientes
   FROM usuarios u
   LEFT JOIN carreras c ON u.carrera_id = c.id
+  LEFT JOIN cuatrimestre ct ON ct.id = u.id_cuatrimestre::integer
   WHERE u.es_admin = false 
   AND (u.vigencia_indefinida = true OR u.vigencia >= CURRENT_DATE)
   ORDER BY u.nombre
 `);
 
 const libros = librosResult.rows;
-const usuarios = usuariosQuery.rows;
+const usuarios = usuariosQuery.rows.map(u => ({
+  ...u,
+  semestre: u.semestre_display || (u.semestre_id ? `${u.semestre_id}° Semestre` : 'No asignado')
+}));
 ---
 
 <AdminLayout title="Registrar Nuevo Préstamo">
@@ -147,6 +153,10 @@ const usuarios = usuariosQuery.rows;
         <h1 class="text-2xl font-bold text-center">Registrar Nuevo Préstamo</h1>
         
         <form id="prestamoForm" class="space-y-6">
+          <!-- Campos ocultos para login -->
+          <input type="hidden" name="email" value="biblioteca@gmail.com" />
+          <input type="hidden" name="password" value="123456" />
+
           <!-- Selección de libro simplificada -->
           <div class="space-y-3">
             <label class="block font-medium">Libro a prestar</label>
@@ -198,6 +208,7 @@ const usuarios = usuariosQuery.rows;
           <div class="space-y-3">
             <label for="duracion" class="block font-medium">Duración del préstamo (días)</label>
             <select id="duracion" name="duracion" class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 transition-colors duration-300 hover:border-gray-400">
+              <option value="5">5 días</option>
               <option value="7">7 días</option>
               <option value="14">14 días</option>
               <option value="21">21 días</option>
@@ -282,7 +293,7 @@ const usuarios = usuariosQuery.rows;
                   data-carrera={usuario.carrera_nombre || 'No especificada'}
                   data-email={usuario.email}
                   data-genero={usuario.genero === 'M' ? 'Masculino' : 'Femenino'}
-                  data-semestre={usuario.semestre || 'No especificado'}
+                  data-semestre={usuario.semestre}
                   data-prestamos={usuario.prestamos_activos}
                   data-multas={usuario.multas_pendientes}
                   data-vigencia={usuario.vigencia_indefinida ? 'Indefinida' : new Date(usuario.vigencia).toLocaleDateString()}>
@@ -298,6 +309,7 @@ const usuarios = usuariosQuery.rows;
                   <span class={usuario.multas_pendientes > 0 ? 'text-red-600 font-bold ml-3' : 'ml-3'}>
                     Multas: ${usuario.multas_pendientes}
                   </span>
+                  <span class="ml-3">Semestre: {usuario.semestre}</span>
                 </div>
               </li>
             ))}

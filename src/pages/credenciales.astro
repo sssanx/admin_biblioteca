@@ -2,7 +2,8 @@
 export const prerender = false;
 import AdminLayout from '../layouts/AdminLayout.astro';
 
-import db from '../lib/db';
+import { db } from '../lib/db.js';
+console.log('DB ES:', db);
 
 // Obtener usuarios con credenciales y estado calculado
 const { rows: usuarios } = await db.query(`

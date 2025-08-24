@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Historial de Actividad</title>
+  <style>
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      font-family: Arial, sans-serif;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 8px;
+    }
+    th {
+      background-color: #004080;
+      color: white;
+    }
+    tr:nth-child(even) {
+      background-color: #f3f3f3;
+    }
+    pre {
+      white-space: pre-wrap;
+      max-width: 400px;
+      overflow-x: auto;
+    }
+  </style>
+</head>
+<body>
+  <h1>Historial de Actividad de Administradores</h1>
+
+  <div id="loginDiv">
+    <h3>Iniciar sesión</h3>
+    <input type="email" id="email" placeholder="Email" /><br/>
+    <input type="password" id="password" placeholder="Contraseña" /><br/>
+    <button onclick="login()">Entrar</button>
+  </div>
+
+  <div id="logsDiv" style="display:none;">
+    <button onclick="logout()">Cerrar sesión</button>
+    <table id="logsTable">
+      <thead>
+        <tr>
+          <th>Fecha</th>
+          <th>Administrador</th>
+          <th>Acción</th>
+          <th>Detalle</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <script>
+    async function login() {
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      try {
+        const res = await fetch('/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        });
+        if (!res.ok) throw new Error('Credenciales inválidas');
+        const data = await res.json();
+        localStorage.setItem('token', data.token);
+        document.getElementById('loginDiv').style.display = 'none';
+        document.getElementById('logsDiv').style.display = 'block';
+        cargarLogs();
+      } catch (e) {
+        alert(e.message);
+      }
+    }
+
+    function logout() {
+      localStorage.removeItem('token');
+      document.getElementById('logsDiv').style.display = 'none';
+      document.getElementById('loginDiv').style.display = 'block';
+    }
+
+    async function cargarLogs() {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      try {
+        const res = await fetch('/logs', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!res.ok) throw new Error('No autorizado');
+        const logs = await res.json();
+        const tbody = document.querySelector('#logsTable tbody');
+        tbody.innerHTML = '';
+        logs.forEach(log => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${new Date(log.fecha).toLocaleString()}</td>
+            <td>${log.administrador}</td>
+            <td>${log.accion}</td>
+            <td><pre>${JSON.stringify(log.detalle, null, 2)}</pre></td>
+          `;
+          tbody.appendChild(tr);
+        });
+      } catch (e) {
+        alert(e.message);
+      }
+    }
+
+    // Si hay token cargamos los logs al cargar la página
+    if (localStorage.getItem('token')) {
+      document.getElementById('loginDiv').style.display = 'none';
+      document.getElementById('logsDiv').style.display = 'block';
+      cargarLogs();
+    }
+  </script>
+</body>
+</html>

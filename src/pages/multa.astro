@@ -1,6 +1,7 @@
 ---
 import AdminLayout from '../layouts/AdminLayout.astro';
-import db from '../lib/db.js';
+import { db } from '../lib/db.js';
+console.log('DB ES:', db);
 import XLSX from 'xlsx';
 
 const url = new URL(Astro.request.url);

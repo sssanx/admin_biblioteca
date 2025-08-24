@@ -1,29 +1,40 @@
 ---
-// src/pages/asistencia.astro
 export const prerender = false;
 import AdminLayout from '../layouts/AdminLayout.astro';
-import db from '../lib/db';
+import { db } from '../lib/db.js';
 
-// 1. Obtener todos los usuarios con sus carreras y cuatrimestre
+// 1. Consulta SQL actualizada para obtener usuarios con semestre
 const { rows: usuarios } = await db.query(`
   SELECT 
     u.id, 
     u.nombre, 
     u.matricula, 
-    u.genero,
-    u.semestre,
-    c.id as carrera_id,
-    COALESCE(c.nombre, u.carrera) as carrera,
-    ct.nombre as cuatrimestre
+    CASE
+      WHEN LOWER(TRIM(u.genero)) IN ('f', 'female', 'femenino') THEN 'F'
+      WHEN LOWER(TRIM(u.genero)) IN ('m', 'male', 'masculino') THEN 'M'
+      ELSE NULL
+    END AS genero,
+    u.id_cuatrimestre AS semestre_id,
+    c.id AS carrera_id,
+    COALESCE(c.nombre, u.carrera) AS carrera,
+    COALESCE(ct.nombre, u.id_cuatrimestre::text || '° Semestre') AS semestre_display
   FROM usuarios u
   LEFT JOIN carreras c ON u.carrera_id = c.id
-  LEFT JOIN cuatrimestre ct ON u.id_cuatrimestre = ct.id
-  ORDER BY u.nombre
+  LEFT JOIN cuatrimestre ct ON ct.id = u.id_cuatrimestre::integer
+  ORDER BY u.nombre;
 `);
 
-// 2. Registrar asistencia
+// Mapeo de usuarios para consistencia
+const usuariosMapeados = usuarios.map(u => ({
+  ...u,
+  cuatrimestre: u.semestre_display || (u.semestre_id ? `${u.semestre_id}° Semestre` : 'No asignado'),
+  cuatrimestres: u.semestre_id
+}));
+
+// 2. Registrar o quitar asistencia
 let mensaje = '';
 let tipoMensaje = 'info';
+
 if (Astro.request.method === 'POST') {
   const formData = await Astro.request.formData();
   const usuarioId = formData.get('usuario_id');
@@ -60,20 +71,22 @@ if (Astro.request.method === 'POST') {
   }
 }
 
-// 3. Obtener asistencias de hoy con cuatrimestre
+// 3. Obtener asistencias de hoy con semestre
 const { rows: asistenciasHoy } = await db.query(`
   SELECT 
     v.usuario_id, 
     u.genero, 
-    COALESCE(c.nombre, u.carrera) as carrera,
-    ct.nombre as cuatrimestre
+    COALESCE(c.nombre, u.carrera) AS carrera,
+    u.id_cuatrimestre AS semestre_id,
+    COALESCE(ct.nombre, u.id_cuatrimestre::text || '° Semestre') AS semestre_display
   FROM visitas v
   JOIN usuarios u ON v.usuario_id = u.id
   LEFT JOIN carreras c ON u.carrera_id = c.id
-  LEFT JOIN cuatrimestre ct ON u.id_cuatrimestre = ct.id
+  LEFT JOIN cuatrimestre ct ON ct.id = u.id_cuatrimestre::integer
   WHERE DATE(v.fecha_hora) = CURRENT_DATE
-  AND v.tipo_visita = 'asistencia'
+    AND v.tipo_visita = 'asistencia'
 `);
+
 const presentesHoy = new Map(asistenciasHoy.map(a => [a.usuario_id, a]));
 
 // 4. Obtener datos para filtros
@@ -175,7 +188,7 @@ const { rows: cuatrimestres } = await db.query(`SELECT id, nombre FROM cuatrimes
       </div>
       
       <div>
-        <label class="block text-sm font-medium text-gray-700 mb-2">Cuatrimestre</label>
+        <label class="block text-sm font-medium text-gray-700 mb-2">Semestre</label>
         <select id="filtro-cuatrimestre" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
           <option value="">Todos</option>
           {cuatrimestres.map(cuatri => (
@@ -202,7 +215,7 @@ const { rows: cuatrimestres } = await db.query(`SELECT id, nombre FROM cuatrimes
         </div>
         <div>
           <p class="text-sm text-gray-500">Total usuarios</p>
-          <p class="text-2xl font-bold">{usuarios.length}</p>
+          <p class="text-2xl font-bold">{usuariosMapeados.length}</p>
         </div>
       </div>
       
@@ -222,7 +235,7 @@ const { rows: cuatrimestres } = await db.query(`SELECT id, nombre FROM cuatrimes
         </div>
         <div>
           <p class="text-sm text-gray-500">Ausentes hoy</p>
-          <p class="text-2xl font-bold text-red-600">{usuarios.length - presentesHoy.size}</p>
+          <p class="text-2xl font-bold text-red-600">{usuariosMapeados.length - presentesHoy.size}</p>
         </div>
       </div>
     </div>
@@ -236,24 +249,30 @@ const { rows: cuatrimestres } = await db.query(`SELECT id, nombre FROM cuatrimes
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Matrícula</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Carrera</th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cuatrimestre</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Semestre</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Género</th>
               <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
               <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Acción</th>
             </tr>
           </thead>
           <tbody class="bg-white divide-y divide-gray-200">
-            {usuarios.map((usuario) => {
+            {usuariosMapeados.map((usuario) => {
               const presente = presentesHoy.has(usuario.id);
+              
               return (
-                <tr key={usuario.id} class="table-row" 
-                    data-carrera={usuario.carrera_id}
-                    data-cuatrimestre={usuario.id_cuatrimestre}>
+                <tr
+                  key={usuario.id}
+                  class="table-row hover:bg-gray-50 transition-colors"
+                  data-carrera={usuario.carrera_id || ''}
+                  data-cuatrimestre={usuario.cuatrimestres || ''}
+                >
                   <td class="px-6 py-4 whitespace-nowrap">
                     <div class="flex items-center">
-                      <div class={`flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center ${
-                        usuario.genero === 'F' ? 'bg-pink-100 text-pink-600' : 'bg-blue-100 text-blue-600'
-                      }`}>
+                      <div
+                        class={`flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center ${
+                          usuario.genero === 'F' ? 'bg-pink-100 text-pink-600' : 'bg-blue-100 text-blue-600'
+                        }`}
+                      >
                         <i class={`fas ${usuario.genero === 'F' ? 'fa-venus' : 'fa-mars'}`}></i>
                       </div>
                       <div class="ml-4">
@@ -261,22 +280,36 @@ const { rows: cuatrimestres } = await db.query(`SELECT id, nombre FROM cuatrimes
                       </div>
                     </div>
                   </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{usuario.matricula}</td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{usuario.carrera || 'N/A'}</td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{usuario.cuatrimestre || usuario.semestre || 'N/A'}</td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {usuario.matricula || 'N/A'}
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {usuario.carrera || 'N/A'}
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {usuario.cuatrimestre || 'N/A'}
+                  </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {usuario.genero === 'F' ? (
                       <span class="badge bg-pink-100 text-pink-800">
                         <i class="fas fa-venus mr-1"></i> Femenino
                       </span>
-                    ) : (
+                    ) : usuario.genero === 'M' ? (
                       <span class="badge bg-blue-100 text-blue-800">
                         <i class="fas fa-mars mr-1"></i> Masculino
+                      </span>
+                    ) : (
+                      <span class="badge bg-gray-100 text-gray-800">
+                        <i class="fas fa-question-circle mr-1"></i> No especificado
                       </span>
                     )}
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-center">
-                    <span class={`badge ${presente ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
+                    <span
+                      class={`badge ${
+                        presente ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                      }`}
+                    >
                       {presente ? (
                         <>
                           <i class="fas fa-check-circle mr-1"></i> Presente
@@ -296,7 +329,7 @@ const { rows: cuatrimestres } = await db.query(`SELECT id, nombre FROM cuatrimes
                         value={presente ? 'quitar' : 'registrar'}
                         class={`inline-flex items-center px-3 py-1.5 rounded-md text-white ${
                           presente ? 'bg-red-600 hover:bg-red-700' : 'bg-indigo-600 hover:bg-indigo-700'
-                        }`}
+                        } transition-colors`}
                       >
                         {presente ? (
                           <>
@@ -326,7 +359,7 @@ const { rows: cuatrimestres } = await db.query(`SELECT id, nombre FROM cuatrimes
             <i class="fas fa-file-excel text-green-600 mr-2"></i>
             Exportar a Excel
           </h3>
-          <button id="btnCancelarExcel" class="text-gray-400 hover:text-gray-600">
+          <button id="btnCerrarModalExcel" class="text-gray-400 hover:text-gray-600">
             <i class="fas fa-times"></i>
           </button>
         </div>
@@ -343,13 +376,18 @@ const { rows: cuatrimestres } = await db.query(`SELECT id, nombre FROM cuatrimes
           </div>
           
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Cuatrimestre</label>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Semestre</label>
             <select id="excel-cuatrimestre" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
               <option value="">Todos</option>
               {cuatrimestres.map(cuatri => (
                 <option value={cuatri.id}>{cuatri.nombre}</option>
               ))}
             </select>
+          </div>
+          
+          <div class="flex items-center">
+            <input type="checkbox" id="excel-solo-presentes" class="mr-2 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+            <label for="excel-solo-presentes" class="text-sm text-gray-700">Solo usuarios presentes hoy</label>
           </div>
         </div>
         
@@ -408,77 +446,184 @@ const { rows: cuatrimestres } = await db.query(`SELECT id, nombre FROM cuatrimes
 
       // Configuración del modal de exportación Excel
       const modalExcel = document.getElementById('modalExportarExcel');
+      
+      // Abrir modal
       document.getElementById('btnExportarExcel').addEventListener('click', () => {
         modalExcel.classList.remove('hidden');
         document.body.style.overflow = 'hidden';
       });
 
+      // Cerrar modal
       const cerrarModal = () => {
         modalExcel.classList.add('hidden');
         document.body.style.overflow = 'auto';
       };
       
+      // Eventos para cerrar modal
       document.getElementById('btnCancelarExcel').addEventListener('click', cerrarModal);
+      document.getElementById('btnCerrarModalExcel').addEventListener('click', cerrarModal);
       modalExcel.addEventListener('click', (e) => {
         if (e.target === modalExcel) cerrarModal();
       });
 
-      // Función para exportar a Excel con filtros
-      document.getElementById('btnGenerarExcel').addEventListener('click', function() {
+      // Función para exportar a Excel con formato perfecto
+      document.getElementById('btnGenerarExcel').addEventListener('click', async function() {
         const carreraId = document.getElementById('excel-carrera').value;
         const cuatrimestreId = document.getElementById('excel-cuatrimestre').value;
+        const soloPresentes = document.getElementById('excel-solo-presentes').checked;
         
-        // Filtrar filas según los criterios seleccionados
-        const filasFiltradas = Array.from(document.querySelectorAll('#tablaAsistencia tbody tr'))
-          .filter(fila => {
-            const filaCarrera = fila.getAttribute('data-carrera');
-            const filaCuatrimestre = fila.getAttribute('data-cuatrimestre');
-            
-            const cumpleCarrera = !carreraId || filaCarrera === carreraId;
-            const cumpleCuatrimestre = !cuatrimestreId || filaCuatrimestre === cuatrimestreId;
-            
-            return cumpleCarrera && cumpleCuatrimestre;
+        // Filtrar filas
+        const filasFiltradas = Array.from(document.querySelectorAll('#tablaAsistencia tbody tr')).filter(fila => {
+          const filaCarrera = fila.getAttribute('data-carrera');
+          const filaCuatrimestre = fila.getAttribute('data-cuatrimestre');
+          const estaPresente = fila.querySelector('td:nth-child(6) .badge').textContent.includes('Presente');
+          
+          return (!carreraId || filaCarrera === carreraId) && 
+                 (!cuatrimestreId || filaCuatrimestre === cuatrimestreId) &&
+                 (!soloPresentes || estaPresente);
+        });
+
+        if (filasFiltradas.length === 0) {
+          alert('No hay registros que coincidan con los filtros seleccionados');
+          return;
+        }
+
+        // Cargar SheetJS dinámicamente si no está cargado
+        if (!window.XLSX) {
+          await new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'https://cdn.sheetjs.com/xlsx-0.19.3/package/dist/xlsx.full.min.js';
+            script.onload = resolve;
+            script.onerror = reject;
+            document.head.appendChild(script);
           });
-        
-        // Crear contenido CSV (maneja símbolos correctamente)
-        let csvContent = "data:text/csv;charset=utf-8,";
-        
-        // Encabezados
-        csvContent += "Nombre,Matrícula,Carrera,Cuatrimestre,Género,Estado\n";
-        
-        // Datos
+        }
+
+        // Crear libro de Excel
+        const wb = XLSX.utils.book_new();
+        const ws_data = [
+          // Encabezados
+          ['Nombre', 'Matrícula', 'Carrera', 'Semestre', 'Género', 'Estado']
+        ];
+
+        // Agregar datos
         filasFiltradas.forEach(fila => {
           const celdas = fila.querySelectorAll('td');
-          const nombre = celdas[0].querySelector('div.text-sm').textContent.replace(/"/g, '""');
-          const matricula = celdas[1].textContent.replace(/"/g, '""');
-          const carrera = celdas[2].textContent.replace(/"/g, '""');
-          const cuatrimestre = celdas[3].textContent.replace(/"/g, '""');
-          const genero = celdas[4].textContent.replace(/"/g, '""');
-          const estado = celdas[5].textContent.trim().replace(/"/g, '""');
-          
-          csvContent += `"${nombre}","${matricula}","${carrera}","${cuatrimestre}","${genero}","${estado}"\n`;
+          ws_data.push([
+            celdas[0].querySelector('div.text-sm').textContent.trim(),
+            celdas[1].textContent.trim(),
+            celdas[2].textContent.trim(),
+            celdas[3].textContent.trim(),
+            celdas[4].textContent.trim().replace('Femenino', '♀ Femenino').replace('Masculino', '♂ Masculino'),
+            celdas[5].textContent.trim()
+          ]);
         });
+
+        const ws = XLSX.utils.aoa_to_sheet(ws_data);
+        
+        // Aplicar estilos (usando la técnica de propiedades de celda)
+        const range = XLSX.utils.decode_range(ws['!ref']);
+        
+        // Estilo para encabezados
+        for(let C = range.s.c; C <= range.e.c; ++C) {
+          const headerCell = XLSX.utils.encode_cell({r: range.s.r, c: C});
+          if(!ws[headerCell]) continue;
+          ws[headerCell].s = {
+            fill: {fgColor: {rgb: "4CAF50"}},
+            font: {bold: true, color: {rgb: "FFFFFF"}, sz: 12},
+            alignment: {horizontal: "center", vertical: "center"},
+            border: {
+              top: {style: "thin", color: {rgb: "000000"}},
+              bottom: {style: "thin", color: {rgb: "000000"}},
+              left: {style: "thin", color: {rgb: "000000"}},
+              right: {style: "thin", color: {rgb: "000000"}}
+            }
+          };
+        }
+        
+        // Estilo para datos
+        for(let R = range.s.r + 1; R <= range.e.r; ++R) {
+          for(let C = range.s.c; C <= range.e.c; ++C) {
+            const cell = XLSX.utils.encode_cell({r: R, c: C});
+            if(!ws[cell]) continue;
+            
+            // Estilo base
+            ws[cell].s = {
+              font: {sz: 11},
+              border: {
+                top: {style: "thin", color: {rgb: "DDDDDD"}},
+                bottom: {style: "thin", color: {rgb: "DDDDDD"}},
+                left: {style: "thin", color: {rgb: "DDDDDD"}},
+                right: {style: "thin", color: {rgb: "DDDDDD"}}
+              }
+            };
+            
+            // Fondo para filas pares
+            if(R % 2 === 0) {
+              ws[cell].s.fill = {fgColor: {rgb: "F8F9FA"}};
+            }
+            
+            // Color para estado
+            if(C === 5) { // Columna de Estado
+              const estado = ws_data[R][5];
+              if(estado.includes('Presente')) {
+                ws[cell].s.fill = {fgColor: {rgb: "E6FFE6"}};
+                ws[cell].s.font = {color: {rgb: "006600"}, bold: true};
+              } else {
+                ws[cell].s.fill = {fgColor: {rgb: "FFE6E6"}};
+                ws[cell].s.font = {color: {rgb: "990000"}, bold: true};
+              }
+            }
+            
+            // Color para género
+            if(C === 4) { // Columna de Género
+              const genero = ws_data[R][4];
+              if(genero.includes('♀')) {
+                ws[cell].s.font = {color: {rgb: "FF33CC"}, bold: true};
+              } else {
+                ws[cell].s.font = {color: {rgb: "3366FF"}, bold: true};
+              }
+            }
+          }
+        }
+        
+        // Ajustar ancho de columnas
+        ws['!cols'] = [
+          {wch: 30}, // Nombre
+          {wch: 12}, // Matrícula
+          {wch: 25}, // Carrera
+          {wch: 15}, // Semestre
+          {wch: 12}, // Género
+          {wch: 12}  // Estado
+        ];
+        
+        // Congelar primera fila (encabezados)
+        ws['!freeze'] = {xSplit: 0, ySplit: 1, topLeftCell: 'A2', activePane: 'bottomRight'};
+        
+        // Agregar hoja al libro
+        XLSX.utils.book_append_sheet(wb, ws, "Asistencia");
+        
+        // Generar nombre de archivo
+        let nombreArchivo = 'Asistencia_';
+        if (carreraId) {
+          const carreraNombre = document.querySelector(`#excel-carrera option[value="${carreraId}"]`).textContent;
+          nombreArchivo += `${carreraNombre.replace(/\s+/g, '_')}_`;
+        }
+        if (cuatrimestreId) {
+          const cuatriNombre = document.querySelector(`#excel-cuatrimestre option[value="${cuatrimestreId}"]`).textContent;
+          nombreArchivo += `${cuatriNombre.replace(/\s+/g, '_')}_`;
+        }
+        if (soloPresentes) {
+          nombreArchivo += 'Presentes_';
+        }
+        nombreArchivo += `${new Date().toISOString().slice(0,10)}.xlsx`;
         
         // Descargar archivo
-        const encodedUri = encodeURI(csvContent);
-        const link = document.createElement("a");
-        link.setAttribute("href", encodedUri);
-        link.setAttribute("download", `asistencia_${new Date().toISOString().slice(0,10)}.csv`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        XLSX.writeFile(wb, nombreArchivo);
         
         // Cerrar modal
         cerrarModal();
       });
-
-      // Ocultar notificación después de 3 segundos
-      setTimeout(() => {
-        const notificacion = document.getElementById('notificacion');
-        if (notificacion) {
-          notificacion.remove();
-        }
-      }, 3000);
     });
   </script>
 </AdminLayout>

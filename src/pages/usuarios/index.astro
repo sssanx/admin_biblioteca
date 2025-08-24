@@ -1,11 +1,26 @@
 ---
 import AdminLayout from '../../layouts/AdminLayout.astro';
 
-// Obtener datos de usuarios
 const response = await fetch('http://localhost:4321/api/usuarios');
-const usuarios = await response.json();
 
-// Datos para filtros
+let usuarios = [];
+try {
+  const data = await response.json();
+  console.log("Respuesta de la API usuarios:", data);
+
+  if (Array.isArray(data)) {
+    usuarios = data;
+  } else if (data.rows && Array.isArray(data.rows)) {
+    usuarios = data.rows;
+  } else {
+    console.error("Formato inesperado de respuesta:", data);
+    throw new Error("La API no devolvió un arreglo de usuarios");
+  }
+  console.log("Usuarios cargados:", usuarios);
+} catch (err) {
+  console.error("Error al cargar usuarios:", err);
+}
+
 const carreras = [
   { id: 1, nombre: "Ingeniería en materiales" },
   { id: 2, nombre: "Ingeniería Química" },
@@ -14,8 +29,18 @@ const carreras = [
   { id: 5, nombre: "Ingeniería empresarial" }
 ];
 
-// Usar directamente los datos de la API
-const usuariosMapeados = usuarios;
+// ✅ Corrección clave: usar id_cuatrimestre correctamente
+const usuariosMapeados = usuarios.map(u => ({
+  ...u,
+  cuatrimestre: u.cuatrimestre || (u.id_cuatrimestre ? `${u.id_cuatrimestre}° Semestre` : 'No asignado'),
+  cuatrimestres: u.id_cuatrimestre // 🔁 Esto se usa para data-cuatrimestre
+}));
+console.log("Usuarios mapeados con cuatrimestre:", usuariosMapeados);
+
+const cuatrimestresLista = Array.from({ length: 10 }, (_, i) => ({
+  id: i + 1,
+  nombre: `${i + 1}° Semestre`
+}));
 ---
 
 <AdminLayout title="Gestión de Usuarios">
@@ -60,7 +85,8 @@ const usuariosMapeados = usuarios;
         </div>
 
         <!-- Filtros mejorados -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <!-- Búsqueda -->
           <div class="relative">
             <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
               <svg class="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -74,7 +100,8 @@ const usuariosMapeados = usuarios;
               class="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-[#1B396A] focus:border-[#1B396A] transition shadow-sm"
             />
           </div>
-          
+
+          <!-- Filtro por Carrera -->
           <div class="relative">
             <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
               <svg class="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -91,7 +118,8 @@ const usuariosMapeados = usuarios;
               ))}
             </select>
           </div>
-          
+
+          <!-- Filtro por Cuatrimestre -->
           <div class="relative">
             <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
               <svg class="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -102,9 +130,9 @@ const usuariosMapeados = usuarios;
               id="filterCuatrimestre" 
               class="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-[#1B396A] focus:border-[#1B396A] transition appearance-none shadow-sm"
             >
-              <option value="">Todos los cuatrimestres</option>
-              {Array.from({length:10}, (_,i) => (
-                <option value={i+1}>{i+1}° Cuatrimestre</option>
+              <option value="">Todos los semestres</option>
+              {cuatrimestresLista.map(ct => (
+                <option value={ct.id}>{ct.nombre}</option>
               ))}
             </select>
           </div>
@@ -141,17 +169,18 @@ const usuariosMapeados = usuarios;
                     <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">Nombre</th>
                     <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">Correo</th>
                     <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">Carrera</th>
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">Cuatrimestre</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">Semestre</th>
                     <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">Rol</th>
                     <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">Estado</th>
                     <th scope="col" class="px-6 py-3 text-center text-xs font-medium text-white uppercase tracking-wider">Acciones</th>
                   </tr>
                 </thead>
                 <tbody id="tableBody" class="bg-white divide-y divide-gray-200">
-                  {usuariosMapeados.map(u => (
+                  {usuariosMapeados.map((u) => (
                     <tr class="user-row hover:bg-gray-50 transition-colors" 
-                        data-carrera={u.carrera_id} 
-                        data-cuatrimestre={u.id_cuatrimestre}>
+                        data-carrera={u.carrera_id || ''} 
+                        data-cuatrimestre={u.cuatrimestres || ''}
+>
                       <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-[#1B396A] searchable">
                         <div class="flex items-center">
                           <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -179,10 +208,10 @@ const usuariosMapeados = usuarios;
                         </div>
                       </td>
                       <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                        {u.carrera || <span class="text-gray-400">No asignada</span>}
+                        {u.carrera}
                       </td>
                       <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                        {u.cuatrimestre || <span class="text-gray-400">No asignado</span>}
+                        {u.cuatrimestre}
                       </td>
                       <td class="px-6 py-4 whitespace-nowrap">
                         <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
@@ -194,7 +223,7 @@ const usuariosMapeados = usuarios;
                           <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d={u.bloqueado ? "M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" : "M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"} />
                           </svg>
-                          {u.bloqueado ? 'Bloqueado' : 'Activo'}
+                          {u.bloqueado ? 'Inactivo' : 'Activo'}
                         </span>
                       </td>
                       <td class="px-6 py-4 whitespace-nowrap text-center text-sm space-x-1">
@@ -328,8 +357,6 @@ const usuariosMapeados = usuarios;
                       <option value="" disabled selected>Seleccione un rol</option>
                       <option value="Estudiante">Estudiante</option>
                       <option value="Profesor">Profesor</option>
-                      <option value="Bibliotecario">Bibliotecario</option>
-                      <option value="Administrador">Administrador</option>
                     </select>
                   </div>
                 </div>
@@ -375,7 +402,27 @@ const usuariosMapeados = usuarios;
                 </div>
                 
                 <div>
-                  <label for="id_cuatrimestre" class="block text-sm font-medium text-gray-700">Cuatrimestre</label>
+                  <label for="genero" class="block text-sm font-medium text-gray-700">Sexo*</label>
+                  <div class="mt-1 relative rounded-md shadow-sm">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-3-3v6" />
+                      </svg>
+                    </div>
+                    <select
+                      name="genero"
+                      id="genero"
+                      class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-[#1B396A] focus:border-[#1B396A] sm:text-sm appearance-none"
+                    >
+                      <option value="" disabled selected>Seleccione sexo</option>
+                      <option value="M">Masculino</option>
+                      <option value="F">Femenino</option>
+                    </select>
+                  </div>
+                </div>
+                
+                <div>
+                  <label for="id_cuatrimestre" class="block text-sm font-medium text-gray-700">Semestre</label>
                   <div class="mt-1 relative rounded-md shadow-sm">
                     <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                       <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -387,12 +434,33 @@ const usuariosMapeados = usuarios;
                       id="id_cuatrimestre"
                       class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-[#1B396A] focus:border-[#1B396A] sm:text-sm appearance-none"
                     >
-                      <option value="" selected>Seleccione cuatrimestre</option>
-                      {Array.from({length:10}, (_,i) => (
-                        <option value={i+1}>{i+1}° Cuatrimestre</option>
+                      <option value="" selected>Seleccione Semestre</option>
+                      {cuatrimestresLista.map(ct => (
+                        <option value={ct.id}>{ct.nombre}</option>
                       ))}
                     </select>
                   </div>
+                </div>
+
+                <!-- Vigencia -->
+                <div>
+                  <label for="vigencia" class="block text-sm font-medium text-gray-700">Fecha de vigencia</label>
+                  <input 
+                    type="date" 
+                    id="vigencia" 
+                    name="vigencia"
+                    class="block w-full pl-3 pr-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-[#1B396A] focus:border-[#1B396A] sm:text-sm"
+                  />
+                </div>
+                <div class="flex items-center mt-8 md:mt-9">
+                  <input 
+                    id="vigInd" 
+                    type="checkbox" 
+                    name="vigencia_indefinida"
+                    checked
+                    class="mr-2 h-4 w-4 text-[#cbb26a] border-gray-300 rounded focus:ring-[#cbb26a]"
+                  />
+                  <label for="vigInd" class="text-sm text-gray-700">Vigencia indefinida</label>
                 </div>
               </div>
               
@@ -428,7 +496,7 @@ const usuariosMapeados = usuarios;
         document.getElementById('activeFilters').textContent = count;
       }
       
-      // Función para filtrar la tabla
+      // Función para filtrar la tabla - VERSIÓN CORREGIDA
       function filterTable() {
         const searchValue = document.getElementById('searchInput').value.toLowerCase();
         const carreraValue = document.getElementById('filterCarrera').value;
@@ -438,19 +506,21 @@ const usuariosMapeados = usuarios;
         let visibleCount = 0;
         
         rows.forEach(row => {
-          // Buscar en celdas con clase 'searchable'
+          // Filtro de búsqueda en celdas con clase 'searchable'
           const matchesSearch = searchValue === '' || 
             Array.from(row.querySelectorAll('.searchable')).some(cell => 
               cell.textContent.toLowerCase().includes(searchValue)
             );
           
-          // Filtrar por carrera (usando data attribute)
+          // Filtro por carrera (usando data attribute)
+          const rowCarrera = row.getAttribute('data-carrera');
           const matchesCarrera = carreraValue === '' || 
-            (row.getAttribute('data-carrera') && row.getAttribute('data-carrera') === carreraValue);
+            (rowCarrera && rowCarrera.toString() === carreraValue.toString());
           
-          // Filtrar por cuatrimestre (usando data attribute)
+          // Filtro por cuatrimestre (usando data attribute)
+          const rowCuatrimestre = row.getAttribute('data-cuatrimestre');
           const matchesCuatrimestre = cuatrimestreValue === '' || 
-            (row.getAttribute('data-cuatrimestre') && row.getAttribute('data-cuatrimestre') === cuatrimestreValue);
+            (rowCuatrimestre && rowCuatrimestre.toString() === cuatrimestreValue.toString());
           
           if (matchesSearch && matchesCarrera && matchesCuatrimestre) {
             row.style.display = '';
@@ -493,6 +563,38 @@ const usuariosMapeados = usuarios;
           closeModal();
         }
       });
+
+      // Manejar la vigencia indefinida
+      document.getElementById('vigInd').addEventListener('change', function() {
+        const vigenciaInput = document.getElementById('vigencia');
+        if (this.checked) {
+          vigenciaInput.disabled = true;
+          vigenciaInput.value = '';
+        } else {
+          vigenciaInput.disabled = false;
+        }
+      });
+
+      // Inicializar el estado del checkbox de vigencia indefinida
+      document.addEventListener('DOMContentLoaded', function() {
+        const vigenciaCheckbox = document.getElementById('vigInd');
+        const vigenciaInput = document.getElementById('vigencia');
+        
+        if (vigenciaCheckbox.checked) {
+          vigenciaInput.disabled = true;
+        }
+        
+        vigenciaCheckbox.addEventListener('change', function() {
+          vigenciaInput.disabled = this.checked;
+          if (this.checked) {
+            vigenciaInput.value = '';
+          }
+        });
+        
+        // Ejecutar filtrado inicial
+        filterTable();
+        countActiveFilters();
+      });
       
       // Función para exportar a Excel
       document.getElementById('exportExcel').addEventListener('click', function() {
@@ -510,7 +612,7 @@ const usuariosMapeados = usuarios;
                 'Nombre': cells[1].textContent.trim(),
                 'Correo': cells[2].textContent.trim(),
                 'Carrera': cells[3].textContent.trim(),
-                'Cuatrimestre': cells[4].textContent.trim(),
+                'Semestre': cells[4].textContent.trim(),
                 'Rol': cells[5].textContent.trim(),
                 'Estado': cells[6].textContent.trim()
               });
@@ -528,7 +630,7 @@ const usuariosMapeados = usuarios;
               {wch: 25}, // Nombre
               {wch: 25}, // Correo
               {wch: 25}, // Carrera
-              {wch: 12}, // Cuatrimestre
+              {wch: 12}, // Semestre
               {wch: 15}, // Rol
               {wch: 12}  // Estado
             ];
@@ -549,12 +651,6 @@ const usuariosMapeados = usuarios;
           alert('Error al cargar la librería para exportar. Intenta recargar la página.');
         };
         document.head.appendChild(script);
-      });
-      
-      // Inicializar filtros al cargar
-      document.addEventListener('DOMContentLoaded', function() {
-        filterTable();
-        countActiveFilters();
       });
     </script>
   </main>

@@ -1,4 +1,4 @@
-import db from '../../lib/db.js';
+import { db } from '../../lib/db.js';
 import { generarMARC } from '../../lib/marc.js';
 
 export const prerender = false;

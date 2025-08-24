@@ -1,6 +1,7 @@
 ---
 import db from '../lib/db';
 
+
 const { title = "Panel de Biblioteca ITST" } = Astro.props;
 ---
 <html lang="es">
@@ -127,7 +128,7 @@ const { title = "Panel de Biblioteca ITST" } = Astro.props;
                     </a>
 
                      
-                    <a href="/etiquetas/generador" class="group flex items-center px-3 py-2.5 rounded-lg text-gray-600 hover:bg-[#002E5D]/10 hover:text-[#002E5D] transition-all duration-300 hover:translate-x-1">
+                    <a href="/buscar-libro" class="group flex items-center px-3 py-2.5 rounded-lg text-gray-600 hover:bg-[#002E5D]/10 hover:text-[#002E5D] transition-all duration-300 hover:translate-x-1">
                         <div class="mr-3 p-1.5 rounded-md bg-[#002E5D]/10 text-[#002E5D] transition-all duration-300 group-hover:rotate-6">
                             <i class="fas fa-tags fa-sm animate__animated animate__bounceIn animate__infinite animate__slow"></i>
                         </div>
@@ -142,6 +143,16 @@ const { title = "Panel de Biblioteca ITST" } = Astro.props;
                         <span class="text-sm font-medium">Inventario Libros</span>
                         <span class="ml-auto px-2 py-0.5 text-xs rounded-full bg-[#0077C8] text-white font-medium animate-pulse">5</span>
                     </a>
+
+                       <a href="scan" class="group flex items-center px-3 py-2.5 rounded-lg text-gray-600 hover:bg-[#002E5D]/10 hover:text-[#002E5D] transition-all duration-300 hover:translate-x-1">
+                        <div class="mr-3 p-1.5 rounded-md bg-[#002E5D]/10 text-[#002E5D] transition-all duration-300 group-hover:rotate-6">
+                            <i class="fas fa-exchange-alt fa-sm animate__animated animate__flash animate__infinite animate__slow"></i>
+                        </div>
+                        <span class="text-sm font-medium">Scan Libros</span>
+                        <span class="ml-auto px-2 py-0.5 text-xs rounded-full bg-[#0077C8] text-white font-medium animate-pulse">5</span>
+                    </a>
+
+                    
 
 
                     <a href="/perfil" class="group flex items-center px-3 py-2.5 rounded-lg text-gray-600 hover:bg-[#002E5D]/10 hover:text-[#002E5D] transition-all duration-300 hover:translate-x-1">

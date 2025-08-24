@@ -1,0 +1,161 @@
+---
+// src/pages/admin/historial.astro
+import AdminLayout from '../layouts/AdminLayout.astro';
+import { verificarAdmin } from '../lib/auth';
+
+export const prerender = false;
+
+// Verificar acceso
+const { autorizado, usuario } = await verificarAdmin(Astro.request);
+
+if (!autorizado) {
+  return Astro.redirect('/login?error=acceso_denegado');
+}
+
+// Obtener historial con paginación
+const url = new URL(Astro.request.url);
+const pagina = parseInt(url.searchParams.get('pagina')) || 1;
+const limite = 20;
+const offset = (pagina - 1) * limite;
+
+const { rows: historial } = await db.query(`
+  SELECT h.*, u.nombre as admin_nombre, u.correo as admin_email
+  FROM historial_actividades h
+  JOIN usuarios u ON h.usuario_id = u.id
+  ORDER BY h.fecha_hora DESC
+  LIMIT $1 OFFSET $2
+`, [limite, offset]);
+
+const { rows: [{ count }] } = await db.query(
+  `SELECT COUNT(*) FROM historial_actividades`
+);
+const totalPaginas = Math.ceil(count / limite);
+---
+
+<AdminLayout title="Historial de Actividades">
+  <main class="container mx-auto p-4">
+    <div class="flex justify-between items-center mb-6">
+      <h1 class="text-2xl font-bold">Historial de Actividades</h1>
+      <div class="text-sm text-gray-600">
+        Registros totales: {count}
+      </div>
+    </div>
+
+    <!-- Filtros -->
+    <div class="bg-white rounded-lg shadow p-4 mb-6">
+      <form id="filtrosForm" method="GET" class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div>
+          <label class="block text-sm font-medium mb-1">Administrador</label>
+          <select name="admin_id" class="w-full p-2 border rounded">
+            <option value="">Todos</option>
+            {
+              (await db.query(`SELECT id, nombre FROM usuarios WHERE es_admin = true`)).rows.map(admin => (
+                <option value={admin.id}>{admin.nombre}</option>
+              ))
+            }
+          </select>
+        </div>
+        
+        <div>
+          <label class="block text-sm font-medium mb-1">Tipo de acción</label>
+          <select name="accion" class="w-full p-2 border rounded">
+            <option value="">Todas</option>
+            <option value="LOGIN">Inicios de sesión</option>
+            <option value="PRESTAMO">Préstamos</option>
+            <option value="MULTA">Multas</option>
+            <option value="CONFIG">Cambios de configuración</option>
+          </select>
+        </div>
+        
+        <div>
+          <label class="block text-sm font-medium mb-1">Fecha desde</label>
+          <input type="date" name="fecha_desde" class="w-full p-2 border rounded">
+        </div>
+        
+        <div class="flex items-end">
+          <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+            Filtrar
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Tabla de resultados -->
+    <div class="bg-white rounded-lg shadow overflow-hidden">
+      <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+          <tr>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Admin</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Acción</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Detalles</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha/Hora</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">IP</th>
+          </tr>
+        </thead>
+        <tbody class="bg-white divide-y divide-gray-200">
+          {historial.map(item => (
+            <tr class="hover:bg-gray-50">
+              <td class="px-6 py-4 whitespace-nowrap">
+                <div class="flex items-center">
+                  <div class="text-sm font-medium text-gray-900">{item.admin_nombre}</div>
+                  <div class="text-sm text-gray-500 ml-1">({item.admin_email})</div>
+                </div>
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap">
+                <span class={`px-2 py-1 text-xs rounded-full ${
+                  item.accion.includes('LOGIN') ? 'bg-blue-100 text-blue-800' :
+                  item.accion.includes('PRESTAMO') ? 'bg-green-100 text-green-800' :
+                  item.accion.includes('MULTA') ? 'bg-red-100 text-red-800' :
+                  'bg-gray-100 text-gray-800'
+                }`}>
+                  {item.accion}
+                </span>
+              </td>
+              <td class="px-6 py-4 text-sm text-gray-500 max-w-xs">
+                <div class="truncate" title={item.detalles}>
+                  {item.detalles}
+                </div>
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                {new Date(item.fecha_hora).toLocaleString()}
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                {item.ip_address}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Paginación -->
+    {totalPaginas > 1 && (
+      <div class="flex justify-center mt-6">
+        <nav class="flex items-center space-x-2">
+          {pagina > 1 && (
+            <a href={`/admin/historial?pagina=${pagina - 1}`} class="px-3 py-1 border rounded hover:bg-gray-100">
+              Anterior
+            </a>
+          )}
+          
+          {Array.from({ length: totalPaginas }, (_, i) => i + 1).map(num => (
+            <a 
+              href={`/admin/historial?pagina=${num}`} 
+              class={`px-3 py-1 border rounded ${
+                num === pagina ? 'bg-blue-600 text-white border-blue-600' : 'hover:bg-gray-100'
+              }`}
+            >
+              {num}
+            </a>
+          ))}
+          
+          {pagina < totalPaginas && (
+            <a href={`/admin/historial?pagina=${pagina + 1}`} class="px-3 py-1 border rounded hover:bg-gray-100">
+              Siguiente
+            </a>
+          )}
+        </nav>
+      </div>
+    )}
+  </main>
+</AdminLayout>

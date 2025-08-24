@@ -1,29 +1,10 @@
----
-import AdminLayout from '../layouts/AdminLayout.astro';
-import db from '../lib/db';
-
-// Consulta a la base de datos
-const result = await db.query(`
-  SELECT 
-    u.id as usuario_id, u.nombre, u.matricula, u.foto_path, u.genero,
-    c.id as credencial_id, c.codigo_barras, c.estado,
-    c.fecha_emision, c.fecha_expiracion,
-    carr.nombre as carrera
-  FROM credenciales c
-  JOIN usuarios u ON c.usuario_id = u.id
-  LEFT JOIN carreras carr ON u.carrera_id = carr.id
-  WHERE c.estado = 'ACTIVA'
-  ORDER BY u.nombre
-`);
-
-const credenciales = result.rows;
----
 <!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Credenciales</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
   <main class="bg-gray-50 min-h-screen p-4">
@@ -34,100 +15,170 @@ const credenciales = result.rows;
           <i class="fas fa-print mr-2"></i> Impresión de Credenciales
         </h1>
         <p class="text-gray-600 mt-2">
-          {credenciales.length} credenciales listas para imprimir
+          {totalCredenciales} credenciales listas para imprimir
         </p>
         <div class="mt-4 text-sm text-orange-600">
           <i class="fas fa-info-circle mr-1"></i> Configuración recomendada: Papel A4, Márgenes 5mm, Escala 100%
         </div>
       </div>
 
-      <!-- Caras frontales -->
-      <div class="credential-container">
-        {credenciales.map((credencial) => (
-          <div class="credential-card credential-card-front">
-            {/* Encabezado */}
-            <div class="flex items-center border-b border-white/20 pb-1 mb-1">
-              <div class="w-7 h-7 bg-yellow-500 rounded-full flex items-center justify-center font-bold text-blue-900 text-xs mr-2">
-                ITST
-              </div>
-              <div>
-                <div class="text-[9px] font-bold uppercase leading-tight">INSTITUTO TECNOLÓGICO SUPERIOR DE TLAXCO</div>
-                <div class="text-xs font-bold">CREDENCIAL BIBLIOTECA</div>
-              </div>
-            </div>
-
-            {/* Cuerpo */}
-            <div class="flex gap-1 mt-1">
-              <div class="w-14 h-18 bg-white rounded-sm overflow-hidden flex items-center justify-center">
-                {credencial.foto_path ? (
-                  <img src={credencial.foto_path} alt="Foto" class="w-full h-full object-cover" />
-                ) : (
-                  <i class={`fas ${credencial.genero === 'F' ? 'fa-venus' : 'fa-mars'} text-xl text-gray-400`}></i>
-                )}
-              </div>
-              <div class="flex-1 text-[10px]">
-                <div class="font-bold truncate border-b border-white/20 pb-0.5 mb-0.5">{credencial.nombre}</div>
-                <div class="bg-blue-700/30 px-1 py-0.5 rounded flex justify-between">
-                  <span class="font-bold">MATRÍCULA:</span>
-                  <span class="font-mono tracking-wider">{credencial.matricula || 'N/A'}</span>
-                </div>
-                <div class="flex justify-between mt-0.5">
-                  <span class="font-semibold">Carrera:</span>
-                  <span class="truncate">{credencial.carrera || 'N/A'}</span>
-                </div>
-                <div class="flex justify-between mt-0.5">
-                  <span class="font-semibold">Válida:</span>
-                  <span>{new Date(credencial.fecha_expiracion).toLocaleDateString('es-MX', {day: '2-digit', month: '2-digit', year: 'numeric'})}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Indicadores */}
-            <div class="absolute top-1 right-1 bg-green-500/80 text-white text-[9px] font-bold px-1 py-0.5 rounded">
-              ACTIVA
-            </div>
-            <div class="absolute top-1 left-1 w-5 h-5 bg-gradient-to-br from-red-400/30 via-green-400/30 to-blue-400/30 rounded-full flex items-center justify-center text-white text-[9px] font-bold">
-              ITST
-            </div>
-          </div>
-        ))}
+      <!-- Controles adicionales -->
+      <div class="flex justify-between items-center mb-4 no-print">
+        <div class="text-sm text-gray-600">
+          <i class="fas fa-info-circle mr-1"></i> Desplázate para ver todas las credenciales
+        </div>
+        <div class="flex gap-2">
+          <button id="vaciarCredencialesBtn" class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors flex items-center text-sm">
+            <i class="fas fa-trash-alt mr-2"></i> Vaciar todas
+          </button>
+          <button onclick="printWithSettings()" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center text-sm">
+            <i class="fas fa-print mr-2"></i> Imprimir
+          </button>
+        </div>
       </div>
 
-      <div style="page-break-before: always;"></div>
+      <!-- Contenedor con scroll -->
+      <div class="bg-white rounded-lg shadow-md p-4 mb-6 overflow-auto max-h-[70vh]">
+        <!-- Caras frontales -->
+        <div class="credential-container">
+          {credenciales.map((credencial) => (
+            <div class="credential-card credential-card-front relative">
+              <div class="absolute inset-0 bg-gradient-to-br from-blue-900/80 to-blue-800/80 rounded-lg"></div>
+              <div class="relative z-10 h-full flex flex-col">
+                <div class="flex items-center border-b border-white/20 pb-1 mb-1">
+                  <div class="w-7 h-7 bg-yellow-500 rounded-full flex items-center justify-center font-bold text-blue-900 text-xs mr-2">
+                    ITST
+                  </div>
+                  <div>
+                    <div class="text-[9px] font-bold uppercase leading-tight">INSTITUTO TECNOLÓGICO SUPERIOR DE TLAXCO</div>
+                    <div class="text-xs font-bold">CREDENCIAL BIBLIOTECA</div>
+                  </div>
+                </div>
 
-      <!-- Caras reversas -->
-      <div class="credential-container">
-        {credenciales.map((credencial) => (
-          <div class="credential-card credential-card-back">
-            <img src="/public/nuevoooo.jpg" alt="Logo ITST" class="w-14 h-14 object-contain mx-auto mb-1" />
-            <div class="text-[9px] px-1 leading-tight">
-              <p><strong>Uso exclusivo para préstamo en la Biblioteca</strong></p>
-              <ul class="list-disc list-inside mt-1">
-                <li>Permite el préstamo de hasta 3 libros a domicilio.</li>
-                <li>El préstamo tiene una vigencia de 5 días hábiles.</li>
-                <li>Presente esta credencial vigente para trámites.</li>
-                <li>Solicite reposición en caso de pérdida.</li>
-                <li>Cumpla con normas y reglamentos para mantener el derecho.</li>
-              </ul>
-              <p class="mt-1 text-center font-semibold">Instituto Tecnológico Superior de Tlaxco - Biblioteca</p>
+                <div class="flex gap-1 mt-1 flex-grow">
+                  <div class="w-14 h-18 bg-white rounded-sm overflow-hidden flex items-center justify-center shadow-md">
+                    {credencial.foto_path ? (
+                      <img src={credencial.foto_path} alt="Foto" class="w-full h-full object-cover" />
+                    ) : (
+                      <i class={`fas ${credencial.genero === 'F' ? 'fa-venus' : 'fa-mars'} text-xl text-gray-400`}></i>
+                    )}
+                  </div>
+                  <div class="flex-1 text-[10px]">
+                    <div class="font-bold truncate border-b border-white/20 pb-0.5 mb-0.5">{credencial.nombre}</div>
+                    <div class="bg-blue-700/30 px-1 py-0.5 rounded flex justify-between">
+                      <span class="font-bold">MATRÍCULA:</span>
+                      <span class="font-mono tracking-wider">{credencial.matricula || 'N/A'}</span>
+                    </div>
+                    <div class="flex justify-between mt-0.5">
+                      <span class="font-semibold">Carrera:</span>
+                      <span class="truncate">{credencial.carrera || 'N/A'}</span>
+                    </div>
+                    <div class="flex justify-between mt-0.5">
+                      <span class="font-semibold">Válida:</span>
+                      <span>{new Date(credencial.fecha_expiracion).toLocaleDateString('es-MX', {day: '2-digit', month: '2-digit', year: 'numeric'})}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="absolute top-1 right-1 bg-green-500/80 text-white text-[9px] font-bold px-1 py-0.5 rounded shadow-sm">
+                  ACTIVA
+                </div>
+                <div class="absolute top-1 left-1 w-5 h-5 bg-gradient-to-br from-red-400/30 via-green-400/30 to-blue-400/30 rounded-full flex items-center justify-center text-white text-[9px] font-bold shadow-sm">
+                  ITST
+                </div>
+                <div class="absolute bottom-1 right-1 text-[8px] text-white/50">
+                  ID: {credencial.credencial_id}
+                </div>
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
+
+        <div class="my-6 border-t border-dashed border-gray-300 pt-4">
+          <h3 class="text-center text-gray-600 font-medium mb-4">Reversos de las credenciales</h3>
+        </div>
+
+        <!-- Caras reversas -->
+        <div class="credential-container">
+          {credenciales.map((credencial) => (
+            <div class="credential-card credential-card-back relative">
+              <div class="absolute inset-0 bg-gradient-to-br from-blue-800 to-blue-900 rounded-lg"></div>
+              <div class="relative z-10 h-full flex flex-col items-center justify-center p-2">
+                <img src="/public/nuevoooo.jpg" alt="Logo ITST" class="w-14 h-14 object-contain mx-auto mb-2 shadow-md" />
+                <div class="text-[9px] px-1 leading-tight bg-white/10 rounded p-1">
+                  <p class="font-bold text-center mb-1">USO EXCLUSIVO PARA BIBLIOTECA</p>
+                  <ul class="list-disc list-inside mt-1 space-y-0.5">
+                    <li>Préstamo de hasta 3 libros a domicilio.</li>
+                    <li>Vigencia de préstamo: 5 días hábiles.</li>
+                    <li>Presente credencial vigente para trámites.</li>
+                    <li>Solicite reposición por pérdida.</li>
+                    <li>Cumpla normas para mantener derechos.</li>
+                  </ul>
+                  <p class="mt-2 text-center font-semibold text-[8px]">Instituto Tecnológico Superior de Tlaxco</p>
+                  <p class="text-center text-[8px]">Biblioteca</p>
+                </div>
+                <div class="absolute bottom-1 left-1 right-1 text-center text-[7px] text-white/50">
+                  Código: {credencial.codigo_barras || 'N/A'}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       <!-- Controles de impresión -->
       <div class="mt-6 flex flex-wrap gap-4 justify-center no-print">
-        <button onclick="printWithSettings()" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center text-sm">
+        <button onclick="printWithSettings()" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center text-sm shadow-md">
           <i class="fas fa-print mr-2"></i> Imprimir
         </button>
-        <a href="/credenciales" class="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors flex items-center text-sm">
+        <a href="/credenciales" class="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors flex items-center text-sm shadow-md">
           <i class="fas fa-arrow-left mr-2"></i> Volver
         </a>
       </div>
+
+      <!-- Datos del total como atributo -->
+      <div id="data-container" data-total="{totalCredenciales}" class="hidden"></div>
     </div>
   </main>
 
   <script is:inline>
+    document.addEventListener('DOMContentLoaded', () => {
+      const vaciarBtn = document.getElementById('vaciarCredencialesBtn');
+      const total = Number(document.getElementById('data-container')?.dataset.total || 0);
+
+      if (vaciarBtn) {
+        vaciarBtn.addEventListener('click', async () => {
+          if (total === 0) {
+            alert('No hay credenciales para eliminar');
+            return;
+          }
+
+          if (!confirm(`¿Estás seguro de querer eliminar TODAS las credenciales (${total})? Esta acción no se puede deshacer.`)) {
+            return;
+          }
+
+          try {
+            const response = await fetch('/api/credenciales/vaciar', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              }
+            });
+
+            if (response.ok) {
+              alert('Todas las credenciales han sido eliminadas');
+              window.location.reload();
+            } else {
+              throw new Error('Error al eliminar credenciales');
+            }
+          } catch (error) {
+            console.error('Error:', error);
+            alert('Ocurrió un error al eliminar las credenciales');
+          }
+        });
+      }
+    });
+
     function printWithSettings() {
       const style = document.createElement('style');
       style.textContent = `
@@ -170,31 +221,56 @@ const credenciales = result.rows;
   </script>
 
   <style is:global>
-    /* Estilos para pantalla */
     .credential-container {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-      gap: 1rem;
+      gap: 1.5rem;
       margin: 1.5rem 0;
     }
     .credential-card {
       min-height: 160px;
       padding: 0.5rem;
-      background-color: #1B396A;
-      color: white;
-      border-radius: 0.3rem;
+      border-radius: 0.5rem;
       box-shadow: 0 4px 6px rgba(0,0,0,0.1);
       font-size: 0.75rem;
       position: relative;
       overflow: hidden;
+      transition: transform 0.2s ease;
+    }
+    .credential-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+    }
+    .credential-card-front {
+      background: linear-gradient(135deg, #1B396A 0%, #2C5282 100%);
+      color: white;
     }
     .credential-card-back {
+      background: linear-gradient(135deg, #2C5282 0%, #1B396A 100%);
+      color: white;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       text-align: center;
       padding: 0.5rem;
+    }
+    
+    /* Scrollbar styling */
+    ::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f1f1;
+      border-radius: 10px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #c1c1c1;
+      border-radius: 10px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #a8a8a8;
     }
   </style>
 </body>

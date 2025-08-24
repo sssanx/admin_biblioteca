@@ -1,9 +1,8 @@
 ---
 import AdminLayout from '../../layouts/AdminLayout.astro';
 
-// ────────── Obtener datos del usuario ──────────
 const urlParams = new URLSearchParams(Astro.url.search);
-const userId    = urlParams.get('id');
+const userId = urlParams.get('id');
 
 let userData = {};
 if (userId) {
@@ -11,9 +10,9 @@ if (userId) {
     const res = await fetch(`http://localhost:4321/api/usuarios/${userId}`);
     if (res.ok) {
       userData = await res.json();
-      if (userData.vigencia) {
-        userData.vigencia = userData.vigencia.split('T')[0]; // Solo YYYY-MM-DD
-      }
+      if (userData.vigencia) userData.vigencia = userData.vigencia.split('T')[0];
+      if (userData.cuatrimestres === undefined && userData.id_cuatrimestre)
+        userData.cuatrimestres = Number(userData.id_cuatrimestre);
     } else {
       console.error(`Error al obtener usuario: ${res.status}`);
     }
@@ -36,122 +35,122 @@ if (userId) {
           <h2 class="text-2xl font-semibold text-[#1e3a5f]">Editar Usuario</h2>
         </div>
 
+        <!-- Cargando -->
+        {!userData?.id && (
+          <div class="text-center py-10 text-gray-600">
+            <i class="fas fa-spinner fa-spin text-2xl"></i>
+            <p class="mt-2">Cargando datos del usuario...</p>
+          </div>
+        )}
+
         <!-- Formulario -->
-        <form id="editForm" class="space-y-6">
-          <!-- ID -->
-          <div>
-            <label class="label-astro">ID del Usuario</label>
-            <div class="input-icon">
-              <input type="number" id="id" name="id" readonly
-                     value={userData.id || userId}
-                     class="input-readonly"/>
-              <i class="fas fa-lock icon-left"></i>
-            </div>
-          </div>
-
-          <!-- Nombre -->
-          <div>
-            <label class="label-astro">Nombre Completo</label>
-            <div class="input-icon">
-              <input id="nombre" name="nombre" required placeholder="Ej: Juan Pérez"
-                     value={userData.nombre || ''}
-                     class="input-edit"/>
-              <i class="fas fa-user icon-left"></i>
-            </div>
-          </div>
-
-          <!-- Correo -->
-          <div>
-            <label class="label-astro">Correo Electrónico</label>
-            <div class="input-icon">
-              <input id="correo" name="correo" type="email" required placeholder="usuario@dominio.com"
-                     value={userData.correo || ''}
-                     class="input-edit"/>
-              <i class="fas fa-at icon-left"></i>
-            </div>
-          </div>
-
-          <!-- Rol -->
-          <div>
-            <label class="label-astro">Rol</label>
-            <div class="input-icon">
-              <select id="rol" name="rol" required class="input-select">
-                <option value="" disabled selected>Selecciona un rol</option>
-                {['Estudiante','Profesor','Bibliotecario','Administrador'].map(r=>(
-                  <option value={r} selected={userData.rol===r}>{r}</option>
-                ))}
-              </select>
-              <i class="fas fa-user-shield icon-left"></i>
-            </div>
-          </div>
-
-          <!-- Carrera -->
-          <div>
-            <label class="label-astro">Carrera</label>
-            <div class="input-icon">
-              <select id="carrera_id" name="carrera_id" class="input-select">
-                <option value="" disabled selected>Selecciona una carrera</option>
-                <option value="1" selected={userData.carrera_id==1}>Ingeniería en materiales</option>
-                <option value="2" selected={userData.carrera_id==2}>Ingeniería Química</option>
-                <option value="3" selected={userData.carrera_id==3}>Ingeniería en logística</option>
-                <option value="4" selected={userData.carrera_id==4}>Ingeniería en electromecánica</option>
-                <option value="5" selected={userData.carrera_id==5}>Ingeniería en empresarial</option>
-              </select>
-              <i class="fas fa-graduation-cap icon-left"></i>
-            </div>
-          </div>
-
-          <!-- Cuatrimestre -->
-          <div>
-            <label class="label-astro">Cuatrimestre</label>
-            <div class="input-icon">
-              <select id="cuatrimestres" name="cuatrimestres" class="input-select">
-                <option value="" disabled selected>Selecciona un cuatrimestre</option>
-                {Array.from({length:10},(_,i)=>i+1).map(n=>(
-                  <option value={n} selected={userData.id_cuatrimestre==n}>{n}° Cuatrimestre</option>
-                ))}
-              </select>
-              <i class="fas fa-layer-group icon-left"></i>
-            </div>
-          </div>
-
-          <!-- Vigencia -->
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {userData?.id && (
+          <form id="editForm" class="space-y-6">
             <div>
-              <label class="label-astro">Fecha de vigencia</label>
-              <input type="date" id="vigencia" name="vigencia"
-                     value={userData.vigencia ?? ''}
-                     class="input-edit"/>
+              <label class="label-astro">ID del Usuario</label>
+              <div class="input-icon">
+                <input type="number" id="id" name="id" readonly
+                       value={userData.id || userId}
+                       class="input-readonly"/>
+                <i class="fas fa-lock icon-left"></i>
+              </div>
             </div>
-            <div class="flex items-center mt-8 md:mt-9">
-              <input id="vigInd" type="checkbox" name="vigencia_indefinida"
-                     checked={userData.vigencia_indefinida ?? true}
-                     class="mr-2 h-4 w-4 text-[#cbb26a] border-gray-300 rounded focus:ring-[#cbb26a]"/>
-              <label for="vigInd" class="text-sm">Vigencia indefinida</label>
+
+            <div>
+              <label class="label-astro">Nombre Completo</label>
+              <div class="input-icon">
+                <input id="nombre" name="nombre" required placeholder="Ej: Juan Pérez"
+                       value={userData.nombre || ''}
+                       class="input-edit"/>
+                <i class="fas fa-user icon-left"></i>
+              </div>
             </div>
-          </div>
 
-          <!-- Matrícula -->
-          <div>
-            <label class="label-astro">Matrícula</label>
-            <div class="input-icon">
-              <input id="matricula" name="matricula" required placeholder="A01234567"
-                     value={userData.matricula || ''}
-                     class="input-edit"/>
-              <i class="fas fa-id-badge icon-left"></i>
+            <div>
+              <label class="label-astro">Correo Electrónico</label>
+              <div class="input-icon">
+                <input id="correo" name="correo" type="email" required placeholder="usuario@dominio.com"
+                       value={userData.correo || ''}
+                       class="input-edit"/>
+                <i class="fas fa-at icon-left"></i>
+              </div>
             </div>
-          </div>
 
-          <!-- Botón -->
-          <div class="pt-4">
-            <button type="submit" class="btn-update">
-              <i class="fas fa-sync-alt group-hover:rotate-180 duration-500"></i>
-              <span>Actualizar Usuario</span>
-            </button>
-          </div>
-        </form>
+            <div>
+              <label class="label-astro">Rol</label>
+              <div class="input-icon">
+                <select id="rol" name="rol" required class="input-select">
+                  <option value="" disabled>Selecciona un rol</option>
+                  {['Estudiante','Profesor','Bibliotecario','Administrador'].map(r => (
+                    <option value={r} selected={userData.rol === r}>{r}</option>
+                  ))}
+                </select>
+                <i class="fas fa-user-shield icon-left"></i>
+              </div>
+            </div>
 
-        <!-- Mensaje -->
+            <div>
+              <label class="label-astro">Carrera</label>
+              <div class="input-icon">
+                <select id="carrera_id" name="carrera_id" class="input-select">
+                  <option value="" disabled>Selecciona una carrera</option>
+                  <option value="1" selected={userData.carrera_id == 1}>Ingeniería en materiales</option>
+                  <option value="2" selected={userData.carrera_id == 2}>Ingeniería Química</option>
+                  <option value="3" selected={userData.carrera_id == 3}>Ingeniería en logística</option>
+                  <option value="4" selected={userData.carrera_id == 4}>Ingeniería en electromecánica</option>
+                  <option value="5" selected={userData.carrera_id == 5}>Ingeniería en empresarial</option>
+                </select>
+                <i class="fas fa-graduation-cap icon-left"></i>
+              </div>
+            </div>
+
+            <div>
+              <label class="label-astro">Semestre</label>
+              <div class="input-icon">
+                <select id="cuatrimestres" name="cuatrimestres" class="input-select">
+                  <option value="" disabled>Selecciona un Semestre</option>
+                  {Array.from({ length: 10 }, (_, i) => i + 1).map(n => (
+                    <option value={n} selected={userData.cuatrimestres == n}>{n}° Semestre</option>
+                  ))}
+                </select>
+                <i class="fas fa-layer-group icon-left"></i>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label class="label-astro">Fecha de vigencia</label>
+                <input type="date" id="vigencia" name="vigencia"
+                       value={userData.vigencia ?? ''}
+                       class="input-edit"/>
+              </div>
+              <div class="flex items-center mt-8 md:mt-9">
+                <input id="vigInd" type="checkbox" name="vigencia_indefinida"
+                       checked={userData.vigencia_indefinida !== false}
+                       class="mr-2 h-4 w-4 text-[#cbb26a] border-gray-300 rounded focus:ring-[#cbb26a]"/>
+                <label for="vigInd" class="text-sm">Vigencia indefinida</label>
+              </div>
+            </div>
+
+            <div>
+              <label class="label-astro">Matrícula</label>
+              <div class="input-icon">
+                <input id="matricula" name="matricula" required placeholder="A01234567"
+                       value={userData.matricula || ''}
+                       class="input-edit"/>
+                <i class="fas fa-id-badge icon-left"></i>
+              </div>
+            </div>
+
+            <div class="pt-4">
+              <button type="submit" class="btn-update">
+                <i class="fas fa-sync-alt group-hover:rotate-180 duration-500"></i>
+                <span>Actualizar Usuario</span>
+              </button>
+            </div>
+          </form>
+        )}
+
         <div id="mensaje" class="mt-6 text-center text-sm font-medium flex items-center justify-center gap-2 hidden">
           <i class="fas fa-info-circle"></i><span></span>
         </div>
@@ -159,23 +158,32 @@ if (userId) {
     </div>
   </main>
 
-  <!-- Script envío -->
   <script is:inline>
     document.addEventListener('DOMContentLoaded',()=>{
       const form=document.getElementById('editForm');
       const msg=document.getElementById('mensaje');
-      form.addEventListener('submit',async(e)=>{
+      const vigInd=document.getElementById('vigInd');
+      const vigencia=document.getElementById('vigencia');
+
+      function toggleFecha() {
+        if (vigencia) vigencia.disabled = vigInd.checked;
+      }
+
+      if (vigInd) vigInd.addEventListener('change', toggleFecha);
+      toggleFecha();
+
+      form?.addEventListener('submit',async(e)=>{
         e.preventDefault(); msg.classList.add('hidden');
 
         const formData={
-          id:          form.id.value,
-          nombre:      form.nombre.value,
-          correo:      form.correo.value,
-          rol:         form.rol.value,
-          carrera_id:  form.carrera_id.value,
+          id: form.id.value,
+          nombre: form.nombre.value,
+          correo: form.correo.value,
+          rol: form.rol.value,
+          carrera_id: form.carrera_id.value,
           cuatrimestres: form.cuatrimestres.value,
-          matricula:   form.matricula.value,
-          vigencia:    form.vigencia.value,
+          matricula: form.matricula.value,
+          vigencia: form.vigencia.value,
           vigencia_indefinida: form.vigencia_indefinida.checked
         };
 
@@ -205,7 +213,6 @@ if (userId) {
     });
   </script>
 
-  <!-- Estilos utilitarios -->
   <style is:global>
     .transition-smooth{transition:all .3s cubic-bezier(.4,0,.2,1);}
     .label-astro{display:flex;gap:.5rem;align-items:center;font-size:.875rem;font-weight:500;color:#374151;margin-bottom:.5rem}

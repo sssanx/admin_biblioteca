@@ -1,5 +1,3 @@
-export const prerender = false;
-
 import db from '../../lib/db.js';
 
 export async function PUT({ request }) {
@@ -28,8 +26,7 @@ export async function PUT({ request }) {
       );
     }
 
-    // Convertir vigencia_indefinida a boolean si viene como string o null
-    const vigenciaIndef = data.vigencia_indefinida === true || data.vigencia_indefinida === 'true' ? true : false;
+    const vigenciaIndef = data.vigencia_indefinida === true || data.vigencia_indefinida === 'true';
 
     const result = await db.query(
       `UPDATE usuarios SET 
@@ -50,7 +47,7 @@ export async function PUT({ request }) {
         data.rol.trim(),
         data.matricula.trim(),
         data.carrera_id || null,
-        data.cuatrimestres || null,
+        data.cuatrimestres || null,  // esto viene del form
         data.vigencia || null,
         vigenciaIndef,
         data.id,
